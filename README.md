@@ -47,7 +47,7 @@ It will loop indefinitely, spending ~5 minutes on each band. Spots are appended 
 (when used without `wspr_hopper.sh` or if you want your reports more frequently than every `wspr_hopper.sh` loop)
 
 ```bash
-python3 wspr_analyzer.py wspr_logs/spots-current.tsv KO02 --db wspr.db --output wspr_report.html
+python3 wspr_analyzer.py samples/spots.tsv KO02 --db samples/wspr.db --output samples/wspr_report.html
 ```
 
 | Argument   | Description                                         |

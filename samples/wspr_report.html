@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WSPR Report — KO02</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0e17;
+    --surface: #111827;
+    --surface2: #1a2235;
+    --border: #2a3a52;
+    --text: #c8d6e5;
+    --text-dim: #6b7fa3;
+    --accent: #22d3ee;
+    --accent2: #a78bfa;
+    --accent3: #f472b6;
+    --green: #34d399;
+    --orange: #fb923c;
+    --red: #f87171;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .header {
+    padding: 2rem 2rem 1rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .header h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+  }
+
+  .header .meta {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .controls {
+    padding: 1rem 2rem;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+  }
+
+  .controls button {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .controls button:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  .controls button.active {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+
+  .controls .separator {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+    margin: 0 0.5rem;
+  }
+
+  .controls label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    user-select: none;
+  }
+
+  .controls label input[type="checkbox"] {
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .stats-bar {
+    padding: 1rem 2rem;
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+  }
+
+  .stat {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+  }
+
+  .stat .label { color: var(--text-dim); }
+  .stat .value { color: var(--accent); font-weight: 600; font-size: 1.1rem; }
+
+  .main {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  #map {
+    height: 450px;
+    width: 100%;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section {
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section h2 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--accent2);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 1rem;
+  }
+
+  /* Heatmap */
+  .heatmap-container {
+    overflow-x: auto;
+  }
+
+  .heatmap {
+    display: grid;
+    gap: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+  }
+
+  .heatmap .cell {
+    width: 100%;
+    min-width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    color: var(--text-dim);
+    transition: transform 0.1s;
+  }
+
+  .heatmap .cell:hover {
+    transform: scale(1.3);
+    z-index: 10;
+    position: relative;
+  }
+
+  .heatmap .label-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    min-width: 28px;
+  }
+
+  /* Table */
+  .table-wrapper {
+    overflow-x: auto;
+    max-height: 500px;
+    overflow-y: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface2);
+    color: var(--text-dim);
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    padding: 0.6rem 0.8rem;
+    text-align: left;
+    border-bottom: 2px solid var(--border);
+    cursor: pointer;
+  }
+
+  thead th:hover {
+    color: var(--accent);
+  }
+
+  tbody tr {
+    border-bottom: 1px solid rgba(42, 58, 82, 0.4);
+    transition: background 0.1s;
+  }
+
+  tbody tr:hover {
+    background: rgba(34, 211, 238, 0.05);
+  }
+
+  tbody td {
+    padding: 0.5rem 0.8rem;
+    white-space: nowrap;
+  }
+
+  .band-tag {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 0.72rem;
+  }
+
+  .band-160m { background: #7c3aed33; color: #a78bfa; }
+  .band-80m { background: #6366f133; color: #818cf8; }
+  .band-60m { background: #3b82f633; color: #60a5fa; }
+  .band-40m { background: #0ea5e933; color: #22d3ee; }
+  .band-30m { background: #14b8a633; color: #2dd4bf; }
+  .band-20m { background: #22c55e33; color: #4ade80; }
+  .band-17m { background: #84cc1633; color: #a3e635; }
+  .band-15m { background: #eab30833; color: #fbbf24; }
+  .band-12m { background: #f9731633; color: #fb923c; }
+  .band-10m { background: #ef444433; color: #f87171; }
+  .band-6m { background: #ec489933; color: #f472b6; }
+  .band-2m { background: #d946ef33; color: #e879f9; }
+
+  .callsign {
+    color: var(--green);
+    font-weight: 600;
+  }
+
+  .anonymous {
+    color: var(--text-dim);
+    font-style: italic;
+  }
+
+  .distance {
+    color: var(--orange);
+  }
+
+  .footer {
+    padding: 1rem 2rem;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Polar plot */
+  .polar-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .polar-container canvas {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Leaflet dark tiles */
+  .leaflet-container {
+    background: var(--bg);
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📡 WSPR Monitor</h1>
+  <div class="meta">QTH: KO02 (52.50°, 21.00°) · Generated: 2026-02-12 18:05 UTC</div>
+</div>
+
+<div class="controls" id="timeControls">
+  <button data-window="1" class="active">1h</button>
+  <button data-window="6">6h</button>
+  <button data-window="12">12h</button>
+  <button data-window="24">24h</button>
+  <button data-window="168">7d</button>
+  <div class="separator"></div>
+  <label><input type="checkbox" id="autoReload"> Auto-reload (2 min)</label>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat"><span class="label">Spots:</span><span class="value" id="statSpots">0</span></div>
+  <div class="stat"><span class="label">Stations:</span><span class="value" id="statStations">0</span></div>
+  <div class="stat"><span class="label">Bands:</span><span class="value" id="statBands">0</span></div>
+  <div class="stat"><span class="label">Max dist:</span><span class="value" id="statMaxDist">0 km</span></div>
+</div>
+
+<div id="map"></div>
+
+<div class="section">
+  <h2>Observations</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="timestamp">Date/Time</th>
+          <th data-sort="call">Callsign</th>
+          <th data-sort="loc">Locator</th>
+          <th data-sort="band">Band</th>
+          <th data-sort="freq">Freq (MHz)</th>
+          <th data-sort="snr">SNR</th>
+          <th data-sort="distance_km">Distance</th>
+          <th data-sort="pwr">Power</th>
+          <th data-sort="drift">Drift</th>
+        </tr>
+      </thead>
+      <tbody id="obsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+
+<div class="section">
+  <h2>Azimuth — Station Count by Bearing</h2>
+  <div class="polar-container">
+    <canvas id="polarCanvas" width="600" height="600"></canvas>
+  </div>
+</div>
+
+
+<div class="section">
+  <h2>Heatmap — Hour × Band</h2>
+  <div class="heatmap-container" id="heatmapContainer"></div>
+</div>
+
+<div class="footer">
+  <a href="https://github.com/filipsPL/rtlsdr-wsprd-report">WSPR Analyzer</a> · Data from WSPR logs · Map tiles © OpenStreetMap contributors
+</div>
+
+<script>
+const ALL_OBS = [{"id": 134, "date": "2026-02-12", "time": "2222", "snr": -6.0, "dt": 0.39, "freq": 14.096655, "drift": -1, "call": "<...>", "loc": "KM56VO", "pwr": 33, "band": "20m", "lat": 36.60416666666667, "lon": 31.791666666666668, "timestamp": "2026-02-12T22:22:00Z", "distance_km": 1958.6}, {"id": 142, "date": "2026-02-12", "time": "1848", "snr": -25.15, "dt": -0.79, "freq": 14.096778, "drift": -1, "call": "OH2EAT", "loc": "KP20", "pwr": 27, "band": "20m", "lat": 60.5, "lon": 25.0, "timestamp": "2026-02-12T18:48:00Z", "distance_km": 922.4}, {"id": 141, "date": "2026-02-12", "time": "1730", "snr": -20.07, "dt": -0.33, "freq": 21.0965, "drift": 0, "call": "SP9XCJ", "loc": "JO90", "pwr": 27, "band": "15m", "lat": 50.5, "lon": 19.0, "timestamp": "2026-02-12T17:30:00Z", "distance_km": 261.9}, {"id": 135, "date": "2026-02-12", "time": "1730", "snr": -11.73, "dt": -2.11, "freq": 18.106592, "drift": 2, "call": "IU1PPC", "loc": "JN44", "pwr": 37, "band": "17m", "lat": 44.5, "lon": 9.0, "timestamp": "2026-02-12T17:30:00Z", "distance_km": 1251.1}, {"id": 132, "date": "2026-02-12", "time": "1648", "snr": -19.28, "dt": 0.19, "freq": 14.097321, "drift": 1, "call": "<...>", "loc": "KM56VO", "pwr": 23, "band": "20m", "lat": 36.60416666666667, "lon": 31.791666666666668, "timestamp": "2026-02-12T16:48:00Z", "distance_km": 1958.6}, {"id": 131, "date": "2026-02-12", "time": "1522", "snr": -16.81, "dt": -0.15, "freq": 21.095779, "drift": 4, "call": "9A2MF", "loc": "JN75", "pwr": 27, "band": "15m", "lat": 45.5, "lon": 15.0, "timestamp": "2026-02-12T15:22:00Z", "distance_km": 892.3}, {"id": 136, "date": "2026-02-12", "time": "1356", "snr": -9.19, "dt": -1.81, "freq": 14.096674, "drift": 2, "call": "DG7RJ", "loc": "JN58", "pwr": 30, "band": "20m", "lat": 48.5, "lon": 11.0, "timestamp": "2026-02-12T13:56:00Z", "distance_km": 834.4}, {"id": 133, "date": "2026-02-12", "time": "1312", "snr": -13.34, "dt": 0.93, "freq": 14.097296, "drift": 0, "call": "F6EGX", "loc": "JN35", "pwr": 30, "band": "20m", "lat": 45.5, "lon": 7.0, "timestamp": "2026-02-12T13:12:00Z", "distance_km": 1280.4}, {"id": 146, "date": "2026-02-12", "time": "1222", "snr": -24.76, "dt": -0.94, "freq": 14.097552, "drift": 1, "call": "DL5UY", "loc": "JN48", "pwr": 23, "band": "20m", "lat": 48.5, "lon": 9.0, "timestamp": "2026-02-12T12:22:00Z", "distance_km": 956.6}, {"id": 137, "date": "2026-02-12", "time": "1138", "snr": -16.54, "dt": 1.3, "freq": 7.039829, "drift": 2, "call": "OH2EAT", "loc": "KP20", "pwr": 27, "band": "40m", "lat": 60.5, "lon": 25.0, "timestamp": "2026-02-12T11:38:00Z", "distance_km": 922.4}, {"id": 130, "date": "2026-02-12", "time": "1124", "snr": -12.87, "dt": -0.56, "freq": 10.140621, "drift": 0, "call": "DL5UY", "loc": "JN48", "pwr": 27, "band": "30m", "lat": 48.5, "lon": 9.0, "timestamp": "2026-02-12T11:24:00Z", "distance_km": 956.6}, {"id": 143, "date": "2026-02-12", "time": "1120", "snr": -9.02, "dt": -1.58, "freq": 21.095669, "drift": 0, "call": "K1JT", "loc": "FN20", "pwr": 30, "band": "15m", "lat": 40.5, "lon": -75.0, "timestamp": "2026-02-12T11:20:00Z", "distance_km": 6913.0}, {"id": 139, "date": "2026-02-12", "time": "1052", "snr": -17.3, "dt": 1.45, "freq": 10.139944, "drift": 0, "call": "ZS6WAB", "loc": "KG44", "pwr": 37, "band": "30m", "lat": -25.5, "lon": 29.0, "timestamp": "2026-02-12T10:52:00Z", "distance_km": 8708.0}, {"id": 140, "date": "2026-02-12", "time": "1040", "snr": -20.38, "dt": -0.03, "freq": 14.097385, "drift": -2, "call": "R2BIY", "loc": "KO85", "pwr": 27, "band": "20m", "lat": 55.5, "lon": 37.0, "timestamp": "2026-02-12T10:40:00Z", "distance_km": 1094.8}, {"id": 129, "date": "2026-02-12", "time": "0928", "snr": -12.35, "dt": -2.21, "freq": 7.040567, "drift": 2, "call": "JA1XRQ", "loc": "PM95", "pwr": 30, "band": "40m", "lat": 35.5, "lon": 139.0, "timestamp": "2026-02-12T09:28:00Z", "distance_km": 8541.9}, {"id": 144, "date": "2026-02-12", "time": "0622", "snr": -9.79, "dt": -1.23, "freq": 10.140083, "drift": 0, "call": "LY2H", "loc": "KO24", "pwr": 23, "band": "30m", "lat": 54.5, "lon": 25.0, "timestamp": "2026-02-12T06:22:00Z", "distance_km": 345.5}, {"id": 145, "date": "2026-02-12", "time": "0602", "snr": -14.57, "dt": -2.14, "freq": 28.126221, "drift": 0, "call": "<...>", "loc": "KM56VO", "pwr": 33, "band": "10m", "lat": 36.60416666666667, "lon": 31.791666666666668, "timestamp": "2026-02-12T06:02:00Z", "distance_km": 1958.6}, {"id": 138, "date": "2026-02-12", "time": "0452", "snr": -18.33, "dt": -0.27, "freq": 14.097474, "drift": -1, "call": "LA3JJ", "loc": "JO59", "pwr": 23, "band": "20m", "lat": 59.5, "lon": 11.0, "timestamp": "2026-02-12T04:52:00Z", "distance_km": 994.1}, {"id": 103, "date": "2026-02-11", "time": "2252", "snr": -12.84, "dt": -1.9, "freq": 10.139794, "drift": -4, "call": "<...>", "loc": "JN61TP", "pwr": 30, "band": "30m", "lat": 41.645833333333336, "lon": 13.625, "timestamp": "2026-02-11T22:52:00Z", "distance_km": 1328.2}, {"id": 116, "date": "2026-02-11", "time": "2240", "snr": -23.99, "dt": 1.48, "freq": 18.106147, "drift": -4, "call": "W3HH", "loc": "FM19", "pwr": 37, "band": "17m", "lat": 39.5, "lon": -77.0, "timestamp": "2026-02-11T22:40:00Z", "distance_km": 7110.2}, {"id": 113, "date": "2026-02-11", "time": "2234", "snr": -6.04, "dt": -0.83, "freq": 14.097189, "drift": 0, "call": "SM6FHZ", "loc": "JO67", "pwr": 27, "band": "20m", "lat": 57.5, "lon": 13.0, "timestamp": "2026-02-11T22:34:00Z", "distance_km": 753.6}, {"id": 120, "date": "2026-02-11", "time": "2034", "snr": -12.68, "dt": -2.19, "freq": 14.097287, "drift": 2, "call": "W3HH", "loc": "FM19", "pwr": 27, "band": "20m", "lat": 39.5, "lon": -77.0, "timestamp": "2026-02-11T20:34:00Z", "distance_km": 7110.2}, {"id": 127, "date": "2026-02-11", "time": "2026", "snr": -5.7, "dt": -1.97, "freq": 14.096635, "drift": -2, "call": "DG7RJ", "loc": "JN58", "pwr": 33, "band": "20m", "lat": 48.5, "lon": 11.0, "timestamp": "2026-02-11T20:26:00Z", "distance_km": 834.4}, {"id": 118, "date": "2026-02-11", "time": "1922", "snr": -10.04, "dt": -1.72, "freq": 50.294541, "drift": 0, "call": "9A2MF", "loc": "JN75", "pwr": 33, "band": "6m", "lat": 45.5, "lon": 15.0, "timestamp": "2026-02-11T19:22:00Z", "distance_km": 892.3}, {"id": 106, "date": "2026-02-11", "time": "1742", "snr": -17.82, "dt": 0.52, "freq": 10.140273, "drift": -2, "call": "VK2RG", "loc": "QF56", "pwr": 37, "band": "30m", "lat": -33.5, "lon": 151.0, "timestamp": "2026-02-11T17:42:00Z", "distance_km": 15548.9}, {"id": 108, "date": "2026-02-11", "time": "1732", "snr": -16.58, "dt": -0.04, "freq": 21.096181, "drift": 2, "call": "SM6FHZ", "loc": "JO67", "pwr": 33, "band": "15m", "lat": 57.5, "lon": 13.0, "timestamp": "2026-02-11T17:32:00Z", "distance_km": 753.6}, {"id": 114, "date": "2026-02-11", "time": "1606", "snr": -25.87, "dt": 0.19, "freq": 18.105868, "drift": 2, "call": "G4HSB", "loc": "IO94", "pwr": 33, "band": "17m", "lat": 54.5, "lon": -1.0, "timestamp": "2026-02-11T16:06:00Z", "distance_km": 1465.8}, {"id": 111, "date": "2026-02-11", "time": "1556", "snr": -16.26, "dt": 0.33, "freq": 14.097337, "drift": 0, "call": "W3HH", "loc": "FM19", "pwr": 27, "band": "20m", "lat": 39.5, "lon": -77.0, "timestamp": "2026-02-11T15:56:00Z", "distance_km": 7110.2}, {"id": 123, "date": "2026-02-11", "time": "1546", "snr": -10.27, "dt": 1.31, "freq": 28.126177, "drift": 0, "call": "DL5UY", "loc": "JN48", "pwr": 30, "band": "10m", "lat": 48.5, "lon": 9.0, "timestamp": "2026-02-11T15:46:00Z", "distance_km": 956.6}, {"id": 117, "date": "2026-02-11", "time": "1542", "snr": -22.2, "dt": 0.87, "freq": 14.096884, "drift": 1, "call": "HA5BSW", "loc": "JN97", "pwr": 33, "band": "20m", "lat": 47.5, "lon": 19.0, "timestamp": "2026-02-11T15:42:00Z", "distance_km": 574.0}, {"id": 128, "date": "2026-02-11", "time": "1446", "snr": -23.3, "dt": -0.28, "freq": 14.097006, "drift": -1, "call": "ON7KB", "loc": "JO20", "pwr": 33, "band": "20m", "lat": 50.5, "lon": 5.0, "timestamp": "2026-02-11T14:46:00Z", "distance_km": 1127.2}, {"id": 109, "date": "2026-02-11", "time": "1334", "snr": -12.06, "dt": 0.44, "freq": 14.09707, "drift": -1, "call": "<...>", "loc": "KM56VO", "pwr": 37, "band": "20m", "lat": 36.60416666666667, "lon": 31.791666666666668, "timestamp": "2026-02-11T13:34:00Z", "distance_km": 1958.6}, {"id": 107, "date": "2026-02-11", "time": "1324", "snr": -15.5, "dt": -1.82, "freq": 7.040317, "drift": -1, "call": "<...>", "loc": "IN80BK", "pwr": 27, "band": "40m", "lat": 40.4375, "lon": -3.875, "timestamp": "2026-02-11T13:24:00Z", "distance_km": 2310.9}, {"id": 125, "date": "2026-02-11", "time": "1310", "snr": -15.36, "dt": -1.84, "freq": 7.040465, "drift": -1, "call": "ON7KB", "loc": "JO20", "pwr": 37, "band": "40m", "lat": 50.5, "lon": 5.0, "timestamp": "2026-02-11T13:10:00Z", "distance_km": 1127.2}, {"id": 104, "date": "2026-02-11", "time": "1308", "snr": -17.96, "dt": -0.91, "freq": 14.097241, "drift": 1, "call": "9A2MF", "loc": "JN75", "pwr": 30, "band": "20m", "lat": 45.5, "lon": 15.0, "timestamp": "2026-02-11T13:08:00Z", "distance_km": 892.3}, {"id": 96, "date": "2026-02-11", "time": "1218", "snr": -23.92, "dt": -0.11, "freq": 21.096579, "drift": 0, "call": "OE9GHV", "loc": "JN47", "pwr": 33, "band": "15m", "lat": 47.5, "lon": 9.0, "timestamp": "2026-02-11T12:18:00Z", "distance_km": 1020.2}, {"id": 126, "date": "2026-02-11", "time": "1134", "snr": -23.89, "dt": -0.79, "freq": 21.096389, "drift": 4, "call": "PD0PF", "loc": "JO22", "pwr": 30, "band": "15m", "lat": 52.5, "lon": 5.0, "timestamp": "2026-02-11T11:34:00Z", "distance_km": 1080.8}, {"id": 98, "date": "2026-02-11", "time": "1116", "snr": -18.24, "dt": -2.15, "freq": 28.126544, "drift": 0, "call": "PD0PF", "loc": "JO22", "pwr": 33, "band": "10m", "lat": 52.5, "lon": 5.0, "timestamp": "2026-02-11T11:16:00Z", "distance_km": 1080.8}, {"id": 110, "date": "2026-02-11", "time": "1044", "snr": -7.76, "dt": -1.55, "freq": 10.139911, "drift": 2, "call": "W3HH", "loc": "FM19", "pwr": 30, "band": "30m", "lat": 39.5, "lon": -77.0, "timestamp": "2026-02-11T10:44:00Z", "distance_km": 7110.2}, {"id": 97, "date": "2026-02-11", "time": "1034", "snr": -7.97, "dt": -1.1, "freq": 14.09676, "drift": -2, "call": "W3HH", "loc": "FM19", "pwr": 27, "band": "20m", "lat": 39.5, "lon": -77.0, "timestamp": "2026-02-11T10:34:00Z", "distance_km": 7110.2}, {"id": 112, "date": "2026-02-11", "time": "1004", "snr": -20.74, "dt": 0.39, "freq": 7.04001, "drift": 0, "call": "S57RW", "loc": "JN76", "pwr": 23, "band": "40m", "lat": 46.5, "lon": 15.0, "timestamp": "2026-02-11T10:04:00Z", "distance_km": 794.9}, {"id": 105, "date": "2026-02-11", "time": "0822", "snr": -21.17, "dt": -2.1, "freq": 7.04008, "drift": 1, "call": "DG7RJ", "loc": "JN58", "pwr": 33, "band": "40m", "lat": 48.5, "lon": 11.0, "timestamp": "2026-02-11T08:22:00Z", "distance_km": 834.4}, {"id": 99, "date": "2026-02-11", "time": "0806", "snr": -9.92, "dt": 0.74, "freq": 24.92599, "drift": 0, "call": "EA4GPZ", "loc": "IN80", "pwr": 30, "band": "12m", "lat": 40.5, "lon": -3.0, "timestamp": "2026-02-11T08:06:00Z", "distance_km": 2252.9}, {"id": 119, "date": "2026-02-11", "time": "0652", "snr": -27.74, "dt": -0.56, "freq": 10.139887, "drift": 4, "call": "ON7KB", "loc": "JO20", "pwr": 30, "band": "30m", "lat": 50.5, "lon": 5.0, "timestamp": "2026-02-11T06:52:00Z", "distance_km": 1127.2}, {"id": 102, "date": "2026-02-11", "time": "0610", "snr": -7.35, "dt": -1.92, "freq": 24.925868, "drift": -4, "call": "9A2MF", "loc": "JN75", "pwr": 30, "band": "12m", "lat": 45.5, "lon": 15.0, "timestamp": "2026-02-11T06:10:00Z", "distance_km": 892.3}, {"id": 122, "date": "2026-02-11", "time": "0606", "snr": -18.98, "dt": -1.11, "freq": 14.097036, "drift": 0, "call": "<...>", "loc": "KM56VO", "pwr": 37, "band": "20m", "lat": 36.60416666666667, "lon": 31.791666666666668, "timestamp": "2026-02-11T06:06:00Z", "distance_km": 1958.6}, {"id": 121, "date": "2026-02-11", "time": "0554", "snr": -16.49, "dt": 1.04, "freq": 18.106223, "drift": 0, "call": "VE3GEN", "loc": "FN03", "pwr": 33, "band": "17m", "lat": 43.5, "lon": -79.0, "timestamp": "2026-02-11T05:54:00Z", "distance_km": 6894.4}, {"id": 100, "date": "2026-02-11", "time": "0508", "snr": -9.76, "dt": -1.64, "freq": 28.125646, "drift": 0, "call": "PY2RN", "loc": "GG66", "pwr": 33, "band": "10m", "lat": -23.5, "lon": -47.0, "timestamp": "2026-02-11T05:08:00Z", "distance_km": 10691.9}, {"id": 115, "date": "2026-02-11", "time": "0504", "snr": -27.45, "dt": -2.25, "freq": 10.140535, "drift": -1, "call": "IU0JJD", "loc": "JN61", "pwr": 23, "band": "30m", "lat": 41.5, "lon": 13.0, "timestamp": "2026-02-11T05:04:00Z", "distance_km": 1363.4}, {"id": 101, "date": "2026-02-11", "time": "0504", "snr": -18.87, "dt": 0.04, "freq": 21.096159, "drift": -4, "call": "HA5BSW", "loc": "JN97", "pwr": 33, "band": "15m", "lat": 47.5, "lon": 19.0, "timestamp": "2026-02-11T05:04:00Z", "distance_km": 574.0}, {"id": 124, "date": "2026-02-11", "time": "0452", "snr": -17.46, "dt": -2.45, "freq": 50.294227, "drift": 0, "call": "JA1XRQ", "loc": "PM95", "pwr": 30, "band": "6m", "lat": 35.5, "lon": 139.0, "timestamp": "2026-02-11T04:52:00Z", "distance_km": 8541.9}, {"id": 91, "date": "2026-02-10", "time": "2236", "snr": -26.8, "dt": -2.35, "freq": 28.125654, "drift": 4, "call": "VE3GEN", "loc": "FN03", "pwr": 30, "band": "10m", "lat": 43.5, "lon": -79.0, "timestamp": "2026-02-10T22:36:00Z", "distance_km": 6894.4}, {"id": 73, "date": "2026-02-10", "time": "2206", "snr": -25.25, "dt": -0.84, "freq": 10.140568, "drift": -1, "call": "G4HSB", "loc": "IO94", "pwr": 37, "band": "30m", "lat": 54.5, "lon": -1.0, "timestamp": "2026-02-10T22:06:00Z", "distance_km": 1465.8}, {"id": 76, "date": "2026-02-10", "time": "2124", "snr": -27.32, "dt": 1.0, "freq": 7.039992, "drift": -2, "call": "DG7RJ", "loc": "JN58", "pwr": 30, "band": "40m", "lat": 48.5, "lon": 11.0, "timestamp": "2026-02-10T21:24:00Z", "distance_km": 834.4}, {"id": 75, "date": "2026-02-10", "time": "2124", "snr": -17.24, "dt": 1.12, "freq": 21.096265, "drift": 2, "call": "PD0PF", "loc": "JO22", "pwr": 30, "band": "15m", "lat": 52.5, "lon": 5.0, "timestamp": "2026-02-10T21:24:00Z", "distance_km": 1080.8}, {"id": 77, "date": "2026-02-10", "time": "2104", "snr": -12.4, "dt": 0.07, "freq": 14.096986, "drift": 1, "call": "LY2H", "loc": "KO24", "pwr": 33, "band": "20m", "lat": 54.5, "lon": 25.0, "timestamp": "2026-02-10T21:04:00Z", "distance_km": 345.5}, {"id": 89, "date": "2026-02-10", "time": "2050", "snr": -15.62, "dt": 1.1, "freq": 10.139805, "drift": 4, "call": "R2BIY", "loc": "KO85", "pwr": 30, "band": "30m", "lat": 55.5, "lon": 37.0, "timestamp": "2026-02-10T20:50:00Z", "distance_km": 1094.8}, {"id": 86, "date": "2026-02-10", "time": "2002", "snr": -19.05, "dt": 0.74, "freq": 24.925923, "drift": 4, "call": "W3HH", "loc": "FM19", "pwr": 27, "band": "12m", "lat": 39.5, "lon": -77.0, "timestamp": "2026-02-10T20:02:00Z", "distance_km": 7110.2}, {"id": 72, "date": "2026-02-10", "time": "1952", "snr": -14.44, "dt": -1.1, "freq": 14.097445, "drift": 0, "call": "PD0PF", "loc": "JO22", "pwr": 37, "band": "20m", "lat": 52.5, "lon": 5.0, "timestamp": "2026-02-10T19:52:00Z", "distance_km": 1080.8}, {"id": 63, "date": "2026-02-10", "time": "1952", "snr": -11.62, "dt": 0.73, "freq": 14.097368, "drift": 0, "call": "VE3GEN", "loc": "FN03", "pwr": 23, "band": "20m", "lat": 43.5, "lon": -79.0, "timestamp": "2026-02-10T19:52:00Z", "distance_km": 6894.4}, {"id": 71, "date": "2026-02-10", "time": "1844", "snr": -21.85, "dt": 1.46, "freq": 10.140158, "drift": 2, "call": "SM6FHZ", "loc": "JO67", "pwr": 33, "band": "30m", "lat": 57.5, "lon": 13.0, "timestamp": "2026-02-10T18:44:00Z", "distance_km": 753.6}, {"id": 61, "date": "2026-02-10", "time": "1834", "snr": -8.34, "dt": -1.19, "freq": 10.140569, "drift": 0, "call": "SM6FHZ", "loc": "JO67", "pwr": 30, "band": "30m", "lat": 57.5, "lon": 13.0, "timestamp": "2026-02-10T18:34:00Z", "distance_km": 753.6}, {"id": 82, "date": "2026-02-10", "time": "1752", "snr": -10.15, "dt": -0.26, "freq": 14.097003, "drift": 0, "call": "<...>", "loc": "KM56VO", "pwr": 37, "band": "20m", "lat": 36.60416666666667, "lon": 31.791666666666668, "timestamp": "2026-02-10T17:52:00Z", "distance_km": 1958.6}, {"id": 80, "date": "2026-02-10", "time": "1732", "snr": -16.66, "dt": -1.81, "freq": 14.097235, "drift": 1, "call": "DL2JA", "loc": "JN58", "pwr": 33, "band": "20m", "lat": 48.5, "lon": 11.0, "timestamp": "2026-02-10T17:32:00Z", "distance_km": 834.4}, {"id": 85, "date": "2026-02-10", "time": "1712", "snr": -12.41, "dt": 1.36, "freq": 14.097246, "drift": 0, "call": "W3HH", "loc": "FM19", "pwr": 23, "band": "20m", "lat": 39.5, "lon": -77.0, "timestamp": "2026-02-10T17:12:00Z", "distance_km": 7110.2}, {"id": 78, "date": "2026-02-10", "time": "1604", "snr": -23.33, "dt": -2.17, "freq": 10.140598, "drift": -4, "call": "IU1PPC", "loc": "JN44", "pwr": 30, "band": "30m", "lat": 44.5, "lon": 9.0, "timestamp": "2026-02-10T16:04:00Z", "distance_km": 1251.1}, {"id": 68, "date": "2026-02-10", "time": "1550", "snr": -17.16, "dt": 1.14, "freq": 28.125656, "drift": 4, "call": "S57RW", "loc": "JN76", "pwr": 27, "band": "10m", "lat": 46.5, "lon": 15.0, "timestamp": "2026-02-10T15:50:00Z", "distance_km": 794.9}, {"id": 66, "date": "2026-02-10", "time": "1454", "snr": -19.59, "dt": -0.15, "freq": 18.10583, "drift": 0, "call": "DL2JA", "loc": "JN58", "pwr": 30, "band": "17m", "lat": 48.5, "lon": 11.0, "timestamp": "2026-02-10T14:54:00Z", "distance_km": 834.4}, {"id": 94, "date": "2026-02-10", "time": "1452", "snr": -19.64, "dt": 0.1, "freq": 21.095664, "drift": -1, "call": "9A2MF", "loc": "JN75", "pwr": 30, "band": "15m", "lat": 45.5, "lon": 15.0, "timestamp": "2026-02-10T14:52:00Z", "distance_km": 892.3}, {"id": 92, "date": "2026-02-10", "time": "1438", "snr": -27.99, "dt": -2.49, "freq": 14.09753, "drift": 0, "call": "OH2EAT", "loc": "KP20", "pwr": 27, "band": "20m", "lat": 60.5, "lon": 25.0, "timestamp": "2026-02-10T14:38:00Z", "distance_km": 922.4}, {"id": 65, "date": "2026-02-10", "time": "1438", "snr": -26.86, "dt": 0.05, "freq": 28.125843, "drift": 2, "call": "OE9GHV", "loc": "JN47", "pwr": 23, "band": "10m", "lat": 47.5, "lon": 9.0, "timestamp": "2026-02-10T14:38:00Z", "distance_km": 1020.2}, {"id": 79, "date": "2026-02-10", "time": "1252", "snr": -10.6, "dt": 0.26, "freq": 7.040255, "drift": 4, "call": "<...>", "loc": "KM56VO", "pwr": 23, "band": "40m", "lat": 36.60416666666667, "lon": 31.791666666666668, "timestamp": "2026-02-10T12:52:00Z", "distance_km": 1958.6}, {"id": 69, "date": "2026-02-10", "time": "1206", "snr": -22.68, "dt": -0.64, "freq": 21.095705, "drift": 2, "call": "LA3JJ", "loc": "JO59", "pwr": 37, "band": "15m", "lat": 59.5, "lon": 11.0, "timestamp": "2026-02-10T12:06:00Z", "distance_km": 994.1}, {"id": 64, "date": "2026-02-10", "time": "1124", "snr": -27.5, "dt": 0.55, "freq": 21.096396, "drift": -2, "call": "HA5BSW", "loc": "JN97", "pwr": 33, "band": "15m", "lat": 47.5, "lon": 19.0, "timestamp": "2026-02-10T11:24:00Z", "distance_km": 574.0}, {"id": 81, "date": "2026-02-10", "time": "1050", "snr": -23.69, "dt": -1.69, "freq": 7.039814, "drift": 4, "call": "<...>", "loc": "KM56VO", "pwr": 33, "band": "40m", "lat": 36.60416666666667, "lon": 31.791666666666668, "timestamp": "2026-02-10T10:50:00Z", "distance_km": 1958.6}, {"id": 95, "date": "2026-02-10", "time": "1006", "snr": -6.01, "dt": -2.35, "freq": 10.140181, "drift": 0, "call": "VK2RG", "loc": "QF56", "pwr": 23, "band": "30m", "lat": -33.5, "lon": 151.0, "timestamp": "2026-02-10T10:06:00Z", "distance_km": 15548.9}, {"id": 62, "date": "2026-02-10", "time": "0918", "snr": -18.76, "dt": -1.96, "freq": 28.12581, "drift": 0, "call": "W3HH", "loc": "FM19", "pwr": 37, "band": "10m", "lat": 39.5, "lon": -77.0, "timestamp": "2026-02-10T09:18:00Z", "distance_km": 7110.2}, {"id": 83, "date": "2026-02-10", "time": "0838", "snr": -8.01, "dt": 0.02, "freq": 28.125855, "drift": 2, "call": "PD0PF", "loc": "JO22", "pwr": 27, "band": "10m", "lat": 52.5, "lon": 5.0, "timestamp": "2026-02-10T08:38:00Z", "distance_km": 1080.8}, {"id": 74, "date": "2026-02-10", "time": "0820", "snr": -7.0, "dt": -0.88, "freq": 28.126464, "drift": 0, "call": "ZS6WAB", "loc": "KG44", "pwr": 33, "band": "10m", "lat": -25.5, "lon": 29.0, "timestamp": "2026-02-10T08:20:00Z", "distance_km": 8708.0}, {"id": 87, "date": "2026-02-10", "time": "0750", "snr": -11.02, "dt": -1.69, "freq": 7.039767, "drift": -2, "call": "PD0PF", "loc": "JO22", "pwr": 30, "band": "40m", "lat": 52.5, "lon": 5.0, "timestamp": "2026-02-10T07:50:00Z", "distance_km": 1080.8}, {"id": 93, "date": "2026-02-10", "time": "0742", "snr": -7.93, "dt": 1.19, "freq": 18.106072, "drift": 0, "call": "W3HH", "loc": "FM19", "pwr": 30, "band": "17m", "lat": 39.5, "lon": -77.0, "timestamp": "2026-02-10T07:42:00Z", "distance_km": 7110.2}, {"id": 70, "date": "2026-02-10", "time": "0628", "snr": -8.73, "dt": -0.89, "freq": 14.096752, "drift": 0, "call": "SP9XCJ", "loc": "JO90", "pwr": 23, "band": "20m", "lat": 50.5, "lon": 19.0, "timestamp": "2026-02-10T06:28:00Z", "distance_km": 261.9}, {"id": 88, "date": "2026-02-10", "time": "0530", "snr": -20.18, "dt": 0.62, "freq": 14.097568, "drift": -2, "call": "W3HH", "loc": "FM19", "pwr": 23, "band": "20m", "lat": 39.5, "lon": -77.0, "timestamp": "2026-02-10T05:30:00Z", "distance_km": 7110.2}, {"id": 84, "date": "2026-02-10", "time": "0516", "snr": -8.68, "dt": 0.81, "freq": 28.126517, "drift": -1, "call": "K1JT", "loc": "FN20", "pwr": 27, "band": "10m", "lat": 40.5, "lon": -75.0, "timestamp": "2026-02-10T05:16:00Z", "distance_km": 6913.0}, {"id": 90, "date": "2026-02-10", "time": "0450", "snr": -27.69, "dt": 0.33, "freq": 14.096652, "drift": 1, "call": "JA1XRQ", "loc": "PM95", "pwr": 33, "band": "20m", "lat": 35.5, "lon": 139.0, "timestamp": "2026-02-10T04:50:00Z", "distance_km": 8541.9}, {"id": 67, "date": "2026-02-10", "time": "0448", "snr": -15.03, "dt": 1.07, "freq": 10.140294, "drift": 2, "call": "LY2H", "loc": "KO24", "pwr": 23, "band": "30m", "lat": 54.5, "lon": 25.0, "timestamp": "2026-02-10T04:48:00Z", "distance_km": 345.5}, {"id": 54, "date": "2026-02-09", "time": "2136", "snr": -12.3, "dt": -0.58, "freq": 14.096839, "drift": 0, "call": "9A2MF", "loc": "JN75", "pwr": 27, "band": "20m", "lat": 45.5, "lon": 15.0, "timestamp": "2026-02-09T21:36:00Z", "distance_km": 892.3}, {"id": 60, "date": "2026-02-09", "time": "2030", "snr": -26.01, "dt": 1.21, "freq": 21.095619, "drift": 1, "call": "OH2EAT", "loc": "KP20", "pwr": 30, "band": "15m", "lat": 60.5, "lon": 25.0, "timestamp": "2026-02-09T20:30:00Z", "distance_km": 922.4}, {"id": 56, "date": "2026-02-09", "time": "1920", "snr": -12.98, "dt": -1.47, "freq": 28.125769, "drift": 0, "call": "R2BIY", "loc": "KO85", "pwr": 37, "band": "10m", "lat": 55.5, "lon": 37.0, "timestamp": "2026-02-09T19:20:00Z", "distance_km": 1094.8}, {"id": 57, "date": "2026-02-09", "time": "1802", "snr": -20.54, "dt": -1.27, "freq": 10.140415, "drift": -4, "call": "IU1PPC", "loc": "JN44", "pwr": 37, "band": "30m", "lat": 44.5, "lon": 9.0, "timestamp": "2026-02-09T18:02:00Z", "distance_km": 1251.1}, {"id": 52, "date": "2026-02-09", "time": "1528", "snr": -6.83, "dt": -1.49, "freq": 28.125606, "drift": 4, "call": "DL5UY", "loc": "JN48", "pwr": 27, "band": "10m", "lat": 48.5, "lon": 9.0, "timestamp": "2026-02-09T15:28:00Z", "distance_km": 956.6}, {"id": 58, "date": "2026-02-09", "time": "1342", "snr": -17.75, "dt": -1.04, "freq": 14.097134, "drift": 1, "call": "<...>", "loc": "IN80BK", "pwr": 33, "band": "20m", "lat": 40.4375, "lon": -3.875, "timestamp": "2026-02-09T13:42:00Z", "distance_km": 2310.9}, {"id": 59, "date": "2026-02-09", "time": "1318", "snr": -23.13, "dt": -2.38, "freq": 14.096621, "drift": 2, "call": "IU0JJD", "loc": "JN61", "pwr": 23, "band": "20m", "lat": 41.5, "lon": 13.0, "timestamp": "2026-02-09T13:18:00Z", "distance_km": 1363.4}, {"id": 55, "date": "2026-02-09", "time": "1210", "snr": -13.56, "dt": 0.85, "freq": 28.126158, "drift": 0, "call": "S57RW", "loc": "JN76", "pwr": 33, "band": "10m", "lat": 46.5, "lon": 15.0, "timestamp": "2026-02-09T12:10:00Z", "distance_km": 794.9}, {"id": 51, "date": "2026-02-09", "time": "1008", "snr": -21.28, "dt": -1.66, "freq": 21.096378, "drift": 0, "call": "VE3GEN", "loc": "FN03", "pwr": 30, "band": "15m", "lat": 43.5, "lon": -79.0, "timestamp": "2026-02-09T10:08:00Z", "distance_km": 6894.4}, {"id": 53, "date": "2026-02-09", "time": "0724", "snr": -26.65, "dt": -1.23, "freq": 10.140404, "drift": 0, "call": "PY2RN", "loc": "GG66", "pwr": 37, "band": "30m", "lat": -23.5, "lon": -47.0, "timestamp": "2026-02-09T07:24:00Z", "distance_km": 10691.9}, {"id": 47, "date": "2026-02-08", "time": "1414", "snr": -10.53, "dt": -1.08, "freq": 10.140599, "drift": 0, "call": "<...>", "loc": "JN61TP", "pwr": 33, "band": "30m", "lat": 41.645833333333336, "lon": 13.625, "timestamp": "2026-02-08T14:14:00Z", "distance_km": 1328.2}, {"id": 45, "date": "2026-02-08", "time": "1334", "snr": -9.37, "dt": -2.06, "freq": 7.039908, "drift": 2, "call": "S57RW", "loc": "JN76", "pwr": 33, "band": "40m", "lat": 46.5, "lon": 15.0, "timestamp": "2026-02-08T13:34:00Z", "distance_km": 794.9}, {"id": 50, "date": "2026-02-08", "time": "1250", "snr": -21.11, "dt": 0.61, "freq": 24.926398, "drift": 0, "call": "SP9XCJ", "loc": "JO90", "pwr": 27, "band": "12m", "lat": 50.5, "lon": 19.0, "timestamp": "2026-02-08T12:50:00Z", "distance_km": 261.9}, {"id": 46, "date": "2026-02-08", "time": "1212", "snr": -14.55, "dt": -1.81, "freq": 7.039699, "drift": -1, "call": "S57RW", "loc": "JN76", "pwr": 23, "band": "40m", "lat": 46.5, "lon": 15.0, "timestamp": "2026-02-08T12:12:00Z", "distance_km": 794.9}, {"id": 49, "date": "2026-02-08", "time": "1040", "snr": -21.62, "dt": 1.35, "freq": 14.097524, "drift": 0, "call": "F6EGX", "loc": "JN35", "pwr": 30, "band": "20m", "lat": 45.5, "lon": 7.0, "timestamp": "2026-02-08T10:40:00Z", "distance_km": 1280.4}, {"id": 48, "date": "2026-02-08", "time": "0712", "snr": -14.0, "dt": -1.55, "freq": 7.040092, "drift": 0, "call": "<...>", "loc": "KM56VO", "pwr": 23, "band": "40m", "lat": 36.60416666666667, "lon": 31.791666666666668, "timestamp": "2026-02-08T07:12:00Z", "distance_km": 1958.6}, {"id": 44, "date": "2026-02-08", "time": "0536", "snr": -26.53, "dt": 0.65, "freq": 10.140589, "drift": 0, "call": "SM6FHZ", "loc": "JO67", "pwr": 33, "band": "30m", "lat": 57.5, "lon": 13.0, "timestamp": "2026-02-08T05:36:00Z", "distance_km": 753.6}, {"id": 40, "date": "2026-02-07", "time": "2214", "snr": -13.93, "dt": 0.76, "freq": 14.097037, "drift": 0, "call": "OE9GHV", "loc": "JN47", "pwr": 27, "band": "20m", "lat": 47.5, "lon": 9.0, "timestamp": "2026-02-07T22:14:00Z", "distance_km": 1020.2}, {"id": 39, "date": "2026-02-07", "time": "2200", "snr": -21.34, "dt": -0.19, "freq": 14.096748, "drift": -1, "call": "G4HSB", "loc": "IO94", "pwr": 33, "band": "20m", "lat": 54.5, "lon": -1.0, "timestamp": "2026-02-07T22:00:00Z", "distance_km": 1465.8}, {"id": 42, "date": "2026-02-07", "time": "2132", "snr": -25.85, "dt": -1.04, "freq": 10.140307, "drift": -1, "call": "SM6FHZ", "loc": "JO67", "pwr": 37, "band": "30m", "lat": 57.5, "lon": 13.0, "timestamp": "2026-02-07T21:32:00Z", "distance_km": 753.6}, {"id": 35, "date": "2026-02-07", "time": "1738", "snr": -10.36, "dt": -2.12, "freq": 14.096608, "drift": 2, "call": "IU0JJD", "loc": "JN61", "pwr": 37, "band": "20m", "lat": 41.5, "lon": 13.0, "timestamp": "2026-02-07T17:38:00Z", "distance_km": 1363.4}, {"id": 43, "date": "2026-02-07", "time": "1722", "snr": -24.01, "dt": -1.22, "freq": 7.039878, "drift": 0, "call": "R2BIY", "loc": "KO85", "pwr": 33, "band": "40m", "lat": 55.5, "lon": 37.0, "timestamp": "2026-02-07T17:22:00Z", "distance_km": 1094.8}, {"id": 36, "date": "2026-02-07", "time": "1700", "snr": -8.46, "dt": 0.09, "freq": 14.096611, "drift": 0, "call": "G4HSB", "loc": "IO94", "pwr": 30, "band": "20m", "lat": 54.5, "lon": -1.0, "timestamp": "2026-02-07T17:00:00Z", "distance_km": 1465.8}, {"id": 38, "date": "2026-02-07", "time": "1614", "snr": -26.89, "dt": -1.8, "freq": 10.140596, "drift": 2, "call": "PD0PF", "loc": "JO22", "pwr": 27, "band": "30m", "lat": 52.5, "lon": 5.0, "timestamp": "2026-02-07T16:14:00Z", "distance_km": 1080.8}, {"id": 37, "date": "2026-02-07", "time": "0644", "snr": -24.13, "dt": -0.61, "freq": 18.106232, "drift": -1, "call": "<...>", "loc": "KM56VO", "pwr": 37, "band": "17m", "lat": 36.60416666666667, "lon": 31.791666666666668, "timestamp": "2026-02-07T06:44:00Z", "distance_km": 1958.6}, {"id": 41, "date": "2026-02-07", "time": "0524", "snr": -8.93, "dt": -0.07, "freq": 21.096098, "drift": 0, "call": "<...>", "loc": "IN80BK", "pwr": 23, "band": "15m", "lat": 40.4375, "lon": -3.875, "timestamp": "2026-02-07T05:24:00Z", "distance_km": 2310.9}, {"id": 21, "date": "2026-02-06", "time": "2156", "snr": -7.87, "dt": -1.46, "freq": 10.140614, "drift": -4, "call": "<...>", "loc": "KM56VO", "pwr": 23, "band": "30m", "lat": 36.60416666666667, "lon": 31.791666666666668, "timestamp": "2026-02-06T21:56:00Z", "distance_km": 1958.6}, {"id": 30, "date": "2026-02-06", "time": "2124", "snr": -19.5, "dt": 0.03, "freq": 14.097002, "drift": 0, "call": "OE9GHV", "loc": "JN47", "pwr": 33, "band": "20m", "lat": 47.5, "lon": 9.0, "timestamp": "2026-02-06T21:24:00Z", "distance_km": 1020.2}, {"id": 31, "date": "2026-02-06", "time": "2028", "snr": -27.41, "dt": -0.35, "freq": 7.040135, "drift": 2, "call": "ON7KB", "loc": "JO20", "pwr": 37, "band": "40m", "lat": 50.5, "lon": 5.0, "timestamp": "2026-02-06T20:28:00Z", "distance_km": 1127.2}, {"id": 34, "date": "2026-02-06", "time": "1908", "snr": -7.15, "dt": -2.07, "freq": 18.106378, "drift": 0, "call": "DL5UY", "loc": "JN48", "pwr": 27, "band": "17m", "lat": 48.5, "lon": 9.0, "timestamp": "2026-02-06T19:08:00Z", "distance_km": 956.6}, {"id": 23, "date": "2026-02-06", "time": "1840", "snr": -13.82, "dt": -0.39, "freq": 7.040456, "drift": 0, "call": "<...>", "loc": "JN61TP", "pwr": 27, "band": "40m", "lat": 41.645833333333336, "lon": 13.625, "timestamp": "2026-02-06T18:40:00Z", "distance_km": 1328.2}, {"id": 28, "date": "2026-02-06", "time": "1746", "snr": -11.81, "dt": -0.04, "freq": 24.926564, "drift": 0, "call": "HA5BSW", "loc": "JN97", "pwr": 33, "band": "12m", "lat": 47.5, "lon": 19.0, "timestamp": "2026-02-06T17:46:00Z", "distance_km": 574.0}, {"id": 26, "date": "2026-02-06", "time": "1738", "snr": -23.12, "dt": -1.53, "freq": 10.140326, "drift": 4, "call": "PD0PF", "loc": "JO22", "pwr": 27, "band": "30m", "lat": 52.5, "lon": 5.0, "timestamp": "2026-02-06T17:38:00Z", "distance_km": 1080.8}, {"id": 25, "date": "2026-02-06", "time": "1520", "snr": -8.98, "dt": 1.13, "freq": 14.096617, "drift": -2, "call": "G4HSB", "loc": "IO94", "pwr": 37, "band": "20m", "lat": 54.5, "lon": -1.0, "timestamp": "2026-02-06T15:20:00Z", "distance_km": 1465.8}, {"id": 20, "date": "2026-02-06", "time": "1504", "snr": -23.68, "dt": -0.31, "freq": 21.096147, "drift": 0, "call": "<...>", "loc": "JN61TP", "pwr": 23, "band": "15m", "lat": 41.645833333333336, "lon": 13.625, "timestamp": "2026-02-06T15:04:00Z", "distance_km": 1328.2}, {"id": 33, "date": "2026-02-06", "time": "1346", "snr": -22.25, "dt": 0.09, "freq": 14.096935, "drift": 0, "call": "OE9GHV", "loc": "JN47", "pwr": 27, "band": "20m", "lat": 47.5, "lon": 9.0, "timestamp": "2026-02-06T13:46:00Z", "distance_km": 1020.2}, {"id": 27, "date": "2026-02-06", "time": "1316", "snr": -19.56, "dt": -0.75, "freq": 10.140175, "drift": 2, "call": "HA5BSW", "loc": "JN97", "pwr": 37, "band": "30m", "lat": 47.5, "lon": 19.0, "timestamp": "2026-02-06T13:16:00Z", "distance_km": 574.0}, {"id": 29, "date": "2026-02-06", "time": "1302", "snr": -20.46, "dt": 1.48, "freq": 18.106285, "drift": 0, "call": "VK2RG", "loc": "QF56", "pwr": 30, "band": "17m", "lat": -33.5, "lon": 151.0, "timestamp": "2026-02-06T13:02:00Z", "distance_km": 15548.9}, {"id": 24, "date": "2026-02-06", "time": "1118", "snr": -25.8, "dt": 0.36, "freq": 7.040113, "drift": -1, "call": "JA1XRQ", "loc": "PM95", "pwr": 30, "band": "40m", "lat": 35.5, "lon": 139.0, "timestamp": "2026-02-06T11:18:00Z", "distance_km": 8541.9}, {"id": 22, "date": "2026-02-06", "time": "0902", "snr": -15.6, "dt": -1.52, "freq": 10.139871, "drift": 1, "call": "F6EGX", "loc": "JN35", "pwr": 30, "band": "30m", "lat": 45.5, "lon": 7.0, "timestamp": "2026-02-06T09:02:00Z", "distance_km": 1280.4}, {"id": 32, "date": "2026-02-06", "time": "0656", "snr": -20.92, "dt": -0.84, "freq": 28.125998, "drift": 0, "call": "DG7RJ", "loc": "JN58", "pwr": 27, "band": "10m", "lat": 48.5, "lon": 11.0, "timestamp": "2026-02-06T06:56:00Z", "distance_km": 834.4}, {"id": 17, "date": "2026-02-05", "time": "2254", "snr": -7.34, "dt": -2.41, "freq": 14.097037, "drift": -4, "call": "W3HH", "loc": "FM19", "pwr": 37, "band": "20m", "lat": 39.5, "lon": -77.0, "timestamp": "2026-02-05T22:54:00Z", "distance_km": 7110.2}, {"id": 12, "date": "2026-02-05", "time": "2032", "snr": -7.06, "dt": -1.25, "freq": 21.096007, "drift": 1, "call": "OH2EAT", "loc": "KP20", "pwr": 27, "band": "15m", "lat": 60.5, "lon": 25.0, "timestamp": "2026-02-05T20:32:00Z", "distance_km": 922.4}, {"id": 1, "date": "2026-02-05", "time": "2026", "snr": -12.14, "dt": 1.03, "freq": 14.097059, "drift": -4, "call": "<...>", "loc": "JN61TP", "pwr": 33, "band": "20m", "lat": 41.645833333333336, "lon": 13.625, "timestamp": "2026-02-05T20:26:00Z", "distance_km": 1328.2}, {"id": 18, "date": "2026-02-05", "time": "1908", "snr": -23.18, "dt": -1.64, "freq": 18.105912, "drift": 0, "call": "OE9GHV", "loc": "JN47", "pwr": 23, "band": "17m", "lat": 47.5, "lon": 9.0, "timestamp": "2026-02-05T19:08:00Z", "distance_km": 1020.2}];
+const HEATMAP_DATA = [{"hour": 4, "band": "6m", "count": 1}, {"hour": 4, "band": "20m", "count": 2}, {"hour": 4, "band": "30m", "count": 1}, {"hour": 5, "band": "10m", "count": 2}, {"hour": 5, "band": "15m", "count": 2}, {"hour": 5, "band": "17m", "count": 1}, {"hour": 5, "band": "20m", "count": 1}, {"hour": 5, "band": "30m", "count": 2}, {"hour": 6, "band": "10m", "count": 2}, {"hour": 6, "band": "12m", "count": 1}, {"hour": 6, "band": "17m", "count": 1}, {"hour": 6, "band": "20m", "count": 2}, {"hour": 6, "band": "30m", "count": 2}, {"hour": 7, "band": "17m", "count": 1}, {"hour": 7, "band": "30m", "count": 1}, {"hour": 7, "band": "40m", "count": 2}, {"hour": 8, "band": "10m", "count": 2}, {"hour": 8, "band": "12m", "count": 1}, {"hour": 8, "band": "40m", "count": 1}, {"hour": 9, "band": "10m", "count": 1}, {"hour": 9, "band": "30m", "count": 1}, {"hour": 9, "band": "40m", "count": 1}, {"hour": 10, "band": "15m", "count": 1}, {"hour": 10, "band": "20m", "count": 3}, {"hour": 10, "band": "30m", "count": 3}, {"hour": 10, "band": "40m", "count": 2}, {"hour": 11, "band": "10m", "count": 1}, {"hour": 11, "band": "15m", "count": 3}, {"hour": 11, "band": "30m", "count": 1}, {"hour": 11, "band": "40m", "count": 2}, {"hour": 12, "band": "10m", "count": 1}, {"hour": 12, "band": "12m", "count": 1}, {"hour": 12, "band": "15m", "count": 2}, {"hour": 12, "band": "20m", "count": 1}, {"hour": 12, "band": "40m", "count": 2}, {"hour": 13, "band": "17m", "count": 1}, {"hour": 13, "band": "20m", "count": 7}, {"hour": 13, "band": "30m", "count": 1}, {"hour": 13, "band": "40m", "count": 3}, {"hour": 14, "band": "10m", "count": 1}, {"hour": 14, "band": "15m", "count": 1}, {"hour": 14, "band": "17m", "count": 1}, {"hour": 14, "band": "20m", "count": 2}, {"hour": 14, "band": "30m", "count": 1}, {"hour": 15, "band": "10m", "count": 3}, {"hour": 15, "band": "15m", "count": 2}, {"hour": 15, "band": "20m", "count": 3}, {"hour": 16, "band": "17m", "count": 1}, {"hour": 16, "band": "20m", "count": 1}, {"hour": 16, "band": "30m", "count": 2}, {"hour": 17, "band": "12m", "count": 1}, {"hour": 17, "band": "15m", "count": 2}, {"hour": 17, "band": "17m", "count": 1}, {"hour": 17, "band": "20m", "count": 5}, {"hour": 17, "band": "30m", "count": 2}, {"hour": 17, "band": "40m", "count": 1}, {"hour": 18, "band": "20m", "count": 1}, {"hour": 18, "band": "30m", "count": 3}, {"hour": 18, "band": "40m", "count": 1}, {"hour": 19, "band": "6m", "count": 1}, {"hour": 19, "band": "10m", "count": 1}, {"hour": 19, "band": "17m", "count": 2}, {"hour": 19, "band": "20m", "count": 2}, {"hour": 20, "band": "12m", "count": 1}, {"hour": 20, "band": "15m", "count": 2}, {"hour": 20, "band": "20m", "count": 3}, {"hour": 20, "band": "30m", "count": 1}, {"hour": 20, "band": "40m", "count": 1}, {"hour": 21, "band": "15m", "count": 1}, {"hour": 21, "band": "20m", "count": 3}, {"hour": 21, "band": "30m", "count": 2}, {"hour": 21, "band": "40m", "count": 1}, {"hour": 22, "band": "10m", "count": 1}, {"hour": 22, "band": "17m", "count": 1}, {"hour": 22, "band": "20m", "count": 5}, {"hour": 22, "band": "30m", "count": 2}];
+const ALL_BANDS = ["6m", "10m", "12m", "15m", "17m", "20m", "30m", "40m"];
+const MY_LAT = 52.50;
+const MY_LON = 21.00;
+
+// Band colors for map lines
+const BAND_COLORS = {
+  '2200m': '#7c3aed', '630m': '#6366f1', '160m': '#a78bfa', '80m': '#818cf8',
+  '60m': '#60a5fa', '40m': '#22d3ee', '30m': '#2dd4bf', '20m': '#4ade80',
+  '17m': '#a3e635', '15m': '#fbbf24', '12m': '#fb923c', '10m': '#f87171',
+  '6m': '#f472b6', '2m': '#e879f9'
+};
+
+let currentWindow = 1;
+let sortKey = 'timestamp';
+let sortAsc = false;
+
+// --- Auto-reload ---
+let reloadTimer = null;
+
+function toggleAutoReload(enabled) {
+  if (reloadTimer) {
+    clearInterval(reloadTimer);
+    reloadTimer = null;
+  }
+  if (enabled) {
+    reloadTimer = setInterval(() => location.reload(), 2 * 60 * 1000);
+  }
+}
+
+document.getElementById('autoReload').addEventListener('change', function() {
+  toggleAutoReload(this.checked);
+});
+
+// --- Map setup ---
+const map = L.map('map', { zoomControl: true }).setView([MY_LAT, MY_LON], 4);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap contributors, © CARTO',
+  maxZoom: 18
+}).addTo(map);
+
+const homeMarker = L.circleMarker([MY_LAT, MY_LON], {
+  radius: 8, fillColor: '#22d3ee', color: '#fff', weight: 2, fillOpacity: 0.9
+}).addTo(map).bindPopup('<b>Home QTH: KO02</b>');
+
+let linesLayer = L.layerGroup().addTo(map);
+let markersLayer = L.layerGroup().addTo(map);
+
+function filterObs(windowHours) {
+  if (windowHours === 0) return ALL_OBS;
+  const now = Date.now();
+  const cutoffMs = now - windowHours * 3600 * 1000;
+  return ALL_OBS.filter(o => new Date(o.timestamp).getTime() >= cutoffMs);
+}
+
+function updateAll() {
+  const obs = filterObs(currentWindow);
+
+  // Stats
+  document.getElementById('statSpots').textContent = obs.length;
+  const calls = new Set(obs.filter(o => o.call !== '<...>').map(o => o.call));
+  document.getElementById('statStations').textContent = calls.size;
+  const bands = new Set(obs.map(o => o.band));
+  document.getElementById('statBands').textContent = bands.size;
+  const maxDist = obs.reduce((m, o) => o.distance_km != null ? Math.max(m, o.distance_km) : m, 0);
+  document.getElementById('statMaxDist').textContent = maxDist > 0 ? maxDist.toLocaleString() + ' km' : '—';
+
+  // Map
+  linesLayer.clearLayers();
+  markersLayer.clearLayers();
+
+  // Deduplicate by call+loc for map (show best SNR)
+  const mapStations = {};
+  for (const o of obs) {
+    if (o.lat == null || o.lon == null) continue;
+    const key = o.call + '|' + o.loc;
+    if (!mapStations[key] || o.snr > mapStations[key].snr) {
+      mapStations[key] = o;
+    }
+  }
+
+  for (const o of Object.values(mapStations)) {
+    const color = BAND_COLORS[o.band] || '#888';
+    L.polyline([[MY_LAT, MY_LON], [o.lat, o.lon]], {
+      color: color, weight: 1.5, opacity: 0.6
+    }).addTo(linesLayer);
+
+    const label = o.call === '<...>' ? o.loc : o.call;
+    L.circleMarker([o.lat, o.lon], {
+      radius: 5, fillColor: color, color: '#fff', weight: 1, fillOpacity: 0.8
+    }).addTo(markersLayer).bindPopup(
+      `<b>${label}</b><br>${o.loc}<br>${o.band} · ${o.distance_km ?? '?'} km<br>SNR: ${o.snr} dB · ${o.pwr} dBm`
+    );
+  }
+
+  // Table
+  const sorted = [...obs].sort((a, b) => {
+    let va = a[sortKey], vb = b[sortKey];
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
+    if (va < vb) return sortAsc ? -1 : 1;
+    if (va > vb) return sortAsc ? 1 : -1;
+    return 0;
+  });
+
+  const tbody = document.getElementById('obsBody');
+  tbody.innerHTML = sorted.map(o => {
+    const bandClass = 'band-' + (o.band || '').replace(/[^a-z0-9m]/gi, '');
+    const callHtml = o.call === '<...>'
+      ? '<span class="anonymous">&lt;anon&gt;</span>'
+      : `<span class="callsign">${o.call}</span>`;
+    const distHtml = o.distance_km != null
+      ? `<span class="distance">${o.distance_km.toLocaleString()} km</span>`
+      : '—';
+    return `<tr>
+      <td>${o.date} ${o.time}</td>
+      <td>${callHtml}</td>
+      <td>${o.loc}</td>
+      <td><span class="band-tag ${bandClass}">${o.band}</span></td>
+      <td>${o.freq?.toFixed(6) || ''}</td>
+      <td>${o.snr}</td>
+      <td>${distHtml}</td>
+      <td>${o.pwr} dBm</td>
+      <td>${o.drift}</td>
+    </tr>`;
+  }).join('');
+
+  // Heatmap (rebuild from filtered obs)
+  buildHeatmap(obs);
+
+  // Polar / azimuth plot
+  buildPolarPlot(obs);
+}
+
+function buildHeatmap(obs) {
+  const hm = {};
+  const bandsInView = new Set();
+  let maxCount = 0;
+
+  for (const o of obs) {
+    const hour = parseInt((o.time || '0000').substring(0, 2));
+    const band = o.band || '?';
+    const key = hour + '|' + band;
+    hm[key] = (hm[key] || 0) + 1;
+    if (hm[key] > maxCount) maxCount = hm[key];
+    bandsInView.add(band);
+  }
+
+  // Sort bands
+  const bandSortKey = b => {
+    const n = parseInt(b.replace('m', '').replace('MHz', '9999'));
+    return isNaN(n) ? 99999 : n;
+  };
+  const bands = [...bandsInView].sort((a, b) => bandSortKey(a) - bandSortKey(b));
+
+  const container = document.getElementById('heatmapContainer');
+  const cols = bands.length + 1;
+
+  let html = `<div class="heatmap" style="grid-template-columns: 40px repeat(${bands.length}, 1fr);">`;
+
+  // Header row
+  html += '<div class="label-cell"></div>';
+  for (const band of bands) {
+    html += `<div class="label-cell">${band}</div>`;
+  }
+
+  // Data rows
+  for (let h = 0; h < 24; h++) {
+    html += `<div class="label-cell">${String(h).padStart(2, '0')}</div>`;
+    for (const band of bands) {
+      const count = hm[h + '|' + band] || 0;
+      const intensity = maxCount > 0 ? count / maxCount : 0;
+      let bg;
+      if (count === 0) {
+        bg = 'rgba(255,255,255,0.02)';
+      } else {
+        const r = Math.round(34 + intensity * (34));
+        const g = Math.round(211 * intensity);
+        const b2 = Math.round(180 + intensity * 58);
+        bg = `rgba(${r}, ${g}, ${b2}, ${0.15 + intensity * 0.7})`;
+      }
+      html += `<div class="cell" style="background:${bg}" title="${h}:00 ${band}: ${count} spots">${count || ''}</div>`;
+    }
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function buildPolarPlot(obs) {
+  const canvas = document.getElementById('polarCanvas');
+  const dpr = window.devicePixelRatio || 1;
+  const cssSize = 600;
+  canvas.width = cssSize * dpr;
+  canvas.height = cssSize * dpr;
+  canvas.style.width = cssSize + 'px';
+  canvas.style.height = cssSize + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, cssSize, cssSize);
+
+  const cx = cssSize / 2;
+  const cy = cssSize / 2;
+  const maxRadius = cssSize / 2 - 50;
+  const NUM_SECTORS = 16;
+  const sectorAngle = (2 * Math.PI) / NUM_SECTORS;
+  const sectorDeg = 360 / NUM_SECTORS;
+
+  // Compute bearing from home to each station
+  function calcBearing(lat1, lon1, lat2, lon2) {
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const rlat1 = lat1 * Math.PI / 180;
+    const rlat2 = lat2 * Math.PI / 180;
+    const y = Math.sin(dLon) * Math.cos(rlat2);
+    const x = Math.cos(rlat1) * Math.sin(rlat2) - Math.sin(rlat1) * Math.cos(rlat2) * Math.cos(dLon);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+
+  // Deduplicate stations
+  const seen = {};
+  for (const o of obs) {
+    if (o.lat == null || o.lon == null || o.distance_km == null || o.distance_km === 0) continue;
+    const key = o.call + '|' + o.loc;
+    if (!seen[key] || o.snr > seen[key].snr) {
+      seen[key] = o;
+    }
+  }
+
+  // Bin into sectors: count + max distance per sector
+  const sectors = Array.from({length: NUM_SECTORS}, () => ({ count: 0, maxDist: 0 }));
+  for (const o of Object.values(seen)) {
+    const brg = calcBearing(MY_LAT, MY_LON, o.lat, o.lon);
+    const idx = Math.floor(((brg + sectorDeg / 2) % 360) / sectorDeg);
+    sectors[idx].count++;
+    sectors[idx].maxDist = Math.max(sectors[idx].maxDist, o.distance_km);
+  }
+
+  const maxCount = Math.max(1, ...sectors.map(s => s.count));
+
+  // Concentric count rings (4 rings)
+  const numRings = 4;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 1; i <= numRings; i++) {
+    const r = (i / numRings) * maxRadius;
+    ctx.strokeStyle = 'rgba(42, 58, 82, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+    ctx.stroke();
+    // Count label
+    const ringVal = Math.round((i / numRings) * maxCount);
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.fillStyle = '#6b7fa3';
+    ctx.fillText(ringVal.toString(), cx + 12, cy - r + 2);
+  }
+
+  // Bearing lines every 22.5° (sector edges)
+  for (let i = 0; i < NUM_SECTORS; i++) {
+    const angle = (i * sectorAngle) - Math.PI / 2 - sectorAngle / 2;
+    ctx.strokeStyle = 'rgba(42, 58, 82, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(angle) * maxRadius, cy + Math.sin(angle) * maxRadius);
+    ctx.stroke();
+  }
+
+  // Cardinal / intercardinal labels
+  const labels = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  for (let i = 0; i < NUM_SECTORS; i++) {
+    const angle = (i * sectorAngle) - Math.PI / 2;
+    const isMain = i % 4 === 0;
+    const isInter = i % 2 === 0;
+    ctx.fillStyle = isMain ? '#c8d6e5' : '#6b7fa3';
+    ctx.font = isMain ? 'bold 13px JetBrains Mono, monospace'
+             : isInter ? '11px JetBrains Mono, monospace'
+             : '9px JetBrains Mono, monospace';
+    const lx = cx + Math.cos(angle) * (maxRadius + (isMain ? 22 : 18));
+    const ly = cy + Math.sin(angle) * (maxRadius + (isMain ? 22 : 18));
+    ctx.fillText(labels[i], lx, ly);
+  }
+
+  // Draw filled wedges (station count)
+  for (let i = 0; i < NUM_SECTORS; i++) {
+    if (sectors[i].count === 0) continue;
+    const startAngle = (i * sectorAngle) - Math.PI / 2 - sectorAngle / 2;
+    const endAngle = startAngle + sectorAngle;
+    const r = (sectors[i].count / maxCount) * maxRadius;
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, startAngle, endAngle);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(34, 211, 238, 0.35)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(34, 211, 238, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // Draw max-distance outline (normalized to largest maxDist across all sectors)
+  const globalMaxDist = Math.max(1, ...sectors.map(s => s.maxDist));
+  ctx.beginPath();
+  let started = false;
+  for (let i = 0; i <= NUM_SECTORS; i++) {
+    const idx = i % NUM_SECTORS;
+    const angle = (idx * sectorAngle) - Math.PI / 2;
+    const r = sectors[idx].maxDist > 0
+      ? (sectors[idx].maxDist / globalMaxDist) * maxRadius * 0.95
+      : 0;
+    const px = cx + Math.cos(angle) * r;
+    const py = cy + Math.sin(angle) * r;
+    if (!started) { ctx.moveTo(px, py); started = true; }
+    else { ctx.lineTo(px, py); }
+  }
+  ctx.closePath();
+  ctx.strokeStyle = 'rgba(251, 146, 60, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Center dot (home)
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, 2 * Math.PI);
+  ctx.fillStyle = '#22d3ee';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Legend
+  ctx.font = '11px JetBrains Mono, monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const lx = 12, ly = cssSize - 40;
+  // Count wedge legend
+  ctx.fillStyle = 'rgba(34, 211, 238, 0.35)';
+  ctx.fillRect(lx, ly, 14, 10);
+  ctx.strokeStyle = 'rgba(34, 211, 238, 0.7)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(lx, ly, 14, 10);
+  ctx.fillStyle = '#c8d6e5';
+  ctx.fillText('Station count', lx + 20, ly - 1);
+  // Max distance legend
+  ctx.strokeStyle = 'rgba(251, 146, 60, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(lx, ly + 22);
+  ctx.lineTo(lx + 14, ly + 22);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#c8d6e5';
+  ctx.fillText('Max distance', lx + 20, ly + 15);
+
+  // Store sector data for tooltip
+  canvas._roseSectors = sectors.map((s, i) => {
+    const fromDeg = Math.round(i * sectorDeg - sectorDeg / 2 + 360) % 360;
+    const toDeg = Math.round(fromDeg + sectorDeg) % 360;
+    return { ...s, fromDeg, toDeg, index: i };
+  });
+}
+
+// Rose plot tooltip
+(function() {
+  const canvas = document.getElementById('polarCanvas');
+  const tooltip = document.createElement('div');
+  tooltip.style.cssText = 'position:fixed;padding:4px 8px;background:#1a2235;border:1px solid #2a3a52;color:#c8d6e5;font:12px JetBrains Mono,monospace;border-radius:4px;pointer-events:none;display:none;z-index:1000;white-space:nowrap';
+  document.body.appendChild(tooltip);
+
+  const labels = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  const NUM_SECTORS = 16;
+  const sectorDeg = 360 / NUM_SECTORS;
+
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const cssSize = 600;
+    const cxc = cssSize / 2, cyc = cssSize / 2;
+    const dx = mx - cxc, dy = my - cyc;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const maxRadius = cssSize / 2 - 50;
+
+    if (dist > maxRadius || !canvas._roseSectors) {
+      tooltip.style.display = 'none';
+      return;
+    }
+
+    // Which sector is the mouse in?
+    let angle = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
+    const idx = Math.floor(((angle + sectorDeg / 2) % 360) / sectorDeg);
+    const sec = canvas._roseSectors[idx];
+
+    if (sec && sec.count > 0) {
+      const distStr = sec.maxDist >= 1000
+        ? (sec.maxDist / 1000).toFixed(1) + 'k'
+        : Math.round(sec.maxDist).toString();
+      tooltip.textContent = `${labels[idx]} (${sec.fromDeg}°–${sec.toDeg}°) · ${sec.count} station${sec.count > 1 ? 's' : ''} · max ${distStr} km`;
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top = (e.clientY - 10) + 'px';
+      tooltip.style.display = 'block';
+    } else {
+      tooltip.style.display = 'none';
+    }
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+  });
+})();
+
+// --- Event handlers ---
+document.getElementById('timeControls').addEventListener('click', e => {
+  if (e.target.tagName !== 'BUTTON') return;
+  document.querySelectorAll('#timeControls button').forEach(b => b.classList.remove('active'));
+  e.target.classList.add('active');
+  currentWindow = parseInt(e.target.dataset.window);
+  updateAll();
+});
+
+document.querySelectorAll('thead th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (sortKey === key) { sortAsc = !sortAsc; }
+    else { sortKey = key; sortAsc = true; }
+    updateAll();
+  });
+});
+
+// Initial render
+updateAll();
+</script>
+
+</body>
+</html>
