@@ -2,6 +2,8 @@
 
 A set of *simple* tools for unattended Weak Signal Propagation Reporter [WSPR](https://en.wikipedia.org/wiki/WSPR_(amateur_radio_software)) spot collection and visualization using an RTL-SDR receiver and [rtlsdr_wsprd](https://github.com/filipsPL/rtlsdr-wsprd/) (modified). The report is single, self-containing html file, so no telegraf, grafana, influxdb etc. ;-) 
 
+[![Run for sample data](https://github.com/filipsPL/rtlsdr-wsprd-report/actions/workflows/test.yml/badge.svg)](https://github.com/filipsPL/rtlsdr-wsprd-report/actions/workflows/test.yml)
+
 ## Components
 
 **`wspr_hopper.sh`** — Band-hopping collector. Cycles `rtlsdr_wsprd` ([fork](https://github.com/filipsPL/rtlsdr-wsprd/)) through configured bands, writing spots to daily TSV log files (`wspr_logs/YYYY-mm-dd.tsv`). A symlink `spots-current.tsv` always points to today's file. Logs older than 30 days are automatically removed.
