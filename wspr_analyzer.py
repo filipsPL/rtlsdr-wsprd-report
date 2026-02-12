@@ -8,7 +8,6 @@ Usage: python wspr_analyzer.py <tsv_file> <my_locator> [--db wspr.db] [--output 
 
 import argparse
 import sqlite3
-import csv
 import math
 import os
 import sys
@@ -18,23 +17,24 @@ from string import Template
 
 # --- Maidenhead Grid Locator Conversion ---
 
+
 def maidenhead_to_latlon(locator: str) -> tuple[float, float] | None:
     """Convert Maidenhead grid locator to (lat, lon) center point."""
     loc = locator.strip().upper()
     if len(loc) < 4 or len(loc) % 2 != 0:
         return None
     try:
-        lon = (ord(loc[0]) - ord('A')) * 20 - 180
-        lat = (ord(loc[1]) - ord('A')) * 10 - 90
-        lon += (ord(loc[2]) - ord('0')) * 2
-        lat += (ord(loc[3]) - ord('0')) * 1
+        lon = (ord(loc[0]) - ord("A")) * 20 - 180
+        lat = (ord(loc[1]) - ord("A")) * 10 - 90
+        lon += (ord(loc[2]) - ord("0")) * 2
+        lat += (ord(loc[3]) - ord("0")) * 1
         if len(loc) >= 6:
-            lon += (ord(loc[4]) - ord('A')) * (2 / 24)
-            lat += (ord(loc[5]) - ord('A')) * (1 / 24)
-            lon += (1 / 24)  # center of subsquare
-            lat += (1 / 48)
+            lon += (ord(loc[4]) - ord("A")) * (2 / 24)
+            lat += (ord(loc[5]) - ord("A")) * (1 / 24)
+            lon += 1 / 24  # center of subsquare
+            lat += 1 / 48
         else:
-            lon += 1    # center of square
+            lon += 1  # center of square
             lat += 0.5
         return (lat, lon)
     except (IndexError, ValueError):
@@ -78,9 +78,11 @@ def freq_to_band(freq_mhz: float) -> str:
 
 # --- Database ---
 
+
 def init_db(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS observations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT NOT NULL,
@@ -98,15 +100,13 @@ def init_db(db_path: str) -> sqlite3.Connection:
             timestamp TEXT NOT NULL,
             UNIQUE(date, time, call, freq)
         )
-    """)
+    """
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON observations(timestamp)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_band ON observations(band)")
 
     # Migrate old timestamps that lack the UTC 'Z' suffix
-    migrated = conn.execute(
-        "UPDATE observations SET timestamp = timestamp || 'Z' "
-        "WHERE timestamp NOT LIKE '%Z'"
-    ).rowcount
+    migrated = conn.execute("UPDATE observations SET timestamp = timestamp || 'Z' " "WHERE timestamp NOT LIKE '%Z'").rowcount
     if migrated:
         print(f"  Migrated {migrated} timestamps to UTC format.")
 
@@ -117,26 +117,26 @@ def init_db(db_path: str) -> sqlite3.Connection:
 def import_tsv(conn: sqlite3.Connection, tsv_path: str) -> int:
     """Import TSV file into database. Returns count of new rows inserted."""
     inserted = 0
-    FIELDS = ['date', 'time', 'snr', 'dt', 'freq', 'drift', 'call', 'loc', 'pwr']
-    with open(tsv_path, 'r') as f:
+    FIELDS = ["date", "time", "snr", "dt", "freq", "drift", "call", "loc", "pwr"]
+    with open(tsv_path, "r") as f:
         for line_no, line in enumerate(f, 1):
             parts = line.strip().split()
             if not parts or len(parts) < len(FIELDS):
                 continue
             # Skip header line
-            if parts[0] == 'date':
+            if parts[0] == "date":
                 continue
             row = dict(zip(FIELDS, parts))
             try:
-                date = row['date']
-                time_str = row['time']
-                freq = float(row['freq'])
-                call = row['call']
-                loc = row['loc']
-                snr = float(row['snr'])
-                dt_val = float(row['dt'])
-                drift = int(row['drift'])
-                pwr = int(row['pwr'])
+                date = row["date"]
+                time_str = row["time"]
+                freq = float(row["freq"])
+                call = row["call"]
+                loc = row["loc"]
+                snr = float(row["snr"])
+                dt_val = float(row["dt"])
+                drift = int(row["drift"])
+                pwr = int(row["pwr"])
 
                 band = freq_to_band(freq)
                 coords = maidenhead_to_latlon(loc)
@@ -147,11 +147,14 @@ def import_tsv(conn: sqlite3.Connection, tsv_path: str) -> int:
                 # time is HHMM format
                 ts = f"{date}T{time_str[:2]}:{time_str[2:]}:00Z"
 
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT OR IGNORE INTO observations
                     (date, time, snr, dt, freq, drift, call, loc, pwr, band, lat, lon, timestamp)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (date, time_str, snr, dt_val, freq, drift, call, loc, pwr, band, lat, lon, ts))
+                """,
+                    (date, time_str, snr, dt_val, freq, drift, call, loc, pwr, band, lat, lon, ts),
+                )
                 inserted += conn.total_changes  # approximate
             except (KeyError, ValueError) as e:
                 print(f"Skipping malformed row: {e}", file=sys.stderr)
@@ -164,9 +167,7 @@ def import_tsv(conn: sqlite3.Connection, tsv_path: str) -> int:
 def query_observations(conn: sqlite3.Connection, since: str | None = None) -> list[dict]:
     """Query observations, optionally filtered by timestamp >= since."""
     if since:
-        rows = conn.execute(
-            "SELECT * FROM observations WHERE timestamp >= ? ORDER BY timestamp DESC", (since,)
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM observations WHERE timestamp >= ? ORDER BY timestamp DESC", (since,)).fetchall()
     else:
         rows = conn.execute("SELECT * FROM observations ORDER BY timestamp DESC").fetchall()
     cols = [d[0] for d in conn.execute("SELECT * FROM observations LIMIT 0").description]
@@ -174,6 +175,7 @@ def query_observations(conn: sqlite3.Connection, since: str | None = None) -> li
 
 
 # --- HTML Generation ---
+
 
 def generate_html(conn: sqlite3.Connection, my_locator: str, output_path: str):
     my_coords = maidenhead_to_latlon(my_locator)
@@ -188,26 +190,27 @@ def generate_html(conn: sqlite3.Connection, my_locator: str, output_path: str):
 
     # Precompute distances
     for obs in all_obs:
-        if obs['lat'] is not None and obs['lon'] is not None:
-            obs['distance_km'] = round(haversine_km(my_lat, my_lon, obs['lat'], obs['lon']), 1)
+        if obs["lat"] is not None and obs["lon"] is not None:
+            obs["distance_km"] = round(haversine_km(my_lat, my_lon, obs["lat"], obs["lon"]), 1)
         else:
-            obs['distance_km'] = None
+            obs["distance_km"] = None
 
     # Build heatmap data: hour (0-23) x band → count
     heatmap = defaultdict(lambda: defaultdict(int))
     all_bands = set()
     for obs in all_obs:
-        hour = int(obs['time'][:2]) if obs['time'] and len(obs['time']) >= 2 else 0
-        band = obs['band'] or '?'
+        hour = int(obs["time"][:2]) if obs["time"] and len(obs["time"]) >= 2 else 0
+        band = obs["band"] or "?"
         heatmap[hour][band] += 1
         all_bands.add(band)
 
     # Sort bands by wavelength (numerically)
     def band_sort_key(b):
         try:
-            return int(b.replace('m', '').replace('MHz', '9999'))
+            return int(b.replace("m", "").replace("MHz", "9999"))
         except ValueError:
             return 99999
+
     sorted_bands = sorted(all_bands, key=band_sort_key)
 
     # Build heatmap JSON
@@ -220,6 +223,7 @@ def generate_html(conn: sqlite3.Connection, my_locator: str, output_path: str):
 
     # Convert observations to JSON-safe format
     import json
+
     obs_json = json.dumps(all_obs, default=str)
     heatmap_json = json.dumps(heatmap_data)
     bands_json = json.dumps(sorted_bands)
@@ -227,8 +231,8 @@ def generate_html(conn: sqlite3.Connection, my_locator: str, output_path: str):
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     # Load external HTML template
-    template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wspr_template.html')
-    with open(template_path, 'r') as f:
+    template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wspr_template.html")
+    with open(template_path, "r") as f:
         template = Template(f.read())
 
     html = template.safe_substitute(
@@ -241,18 +245,19 @@ def generate_html(conn: sqlite3.Connection, my_locator: str, output_path: str):
         BANDS_JSON=bands_json,
     )
 
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         f.write(html)
 
 
 # --- Main ---
 
+
 def main():
-    parser = argparse.ArgumentParser(description='WSPR Log Analyzer')
-    parser.add_argument('tsv_file', help='Input WSPR TSV log file')
-    parser.add_argument('locator', help='Your Maidenhead grid locator (e.g. JN47)')
-    parser.add_argument('--db', default='wspr.db', help='SQLite database path (default: wspr.db)')
-    parser.add_argument('--output', default='wspr_report.html', help='Output HTML file (default: wspr_report.html)')
+    parser = argparse.ArgumentParser(description="WSPR Log Analyzer")
+    parser.add_argument("tsv_file", help="Input WSPR TSV log file")
+    parser.add_argument("locator", help="Your Maidenhead grid locator (e.g. JN47)")
+    parser.add_argument("--db", default="wspr.db", help="SQLite database path (default: wspr.db)")
+    parser.add_argument("--output", default="wspr_report.html", help="Output HTML file (default: wspr_report.html)")
     args = parser.parse_args()
 
     if not os.path.exists(args.tsv_file):
@@ -272,8 +277,5 @@ def main():
     conn.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-
-
-
