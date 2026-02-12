@@ -1,6 +1,6 @@
 # WSPR Monitor
 
-A set of tools for unattended Weak Signal Propagation Reporter [WSPR](https://en.wikipedia.org/wiki/WSPR_(amateur_radio_software)) spot collection and visualization using an RTL-SDR receiver.
+A set of *simple* tools for unattended Weak Signal Propagation Reporter [WSPR](https://en.wikipedia.org/wiki/WSPR_(amateur_radio_software)) spot collection and visualization using an RTL-SDR receiver and [rtlsdr_wsprd](https://github.com/filipsPL/rtlsdr-wsprd/) (modified). The report is single, self-containing html file, so no telegraf, grafana, influxdb etc. ;-) 
 
 ## Components
 
