@@ -233,32 +233,36 @@ def generate_html(conn: sqlite3.Connection, my_locator: str, output_path: str, f
     now_utc = datetime.now(timezone.utc)
     now_str = now_utc.strftime("%Y-%m-%d %H:%M UTC")
 
-    # Daily spot counts for the last 30 days
+    # Daily spot counts by band for the last 30 days
     thirty_days_ago = (now_utc - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
     daily_rows = conn.execute(
-        "SELECT date(timestamp) as day, COUNT(*) as cnt FROM observations WHERE timestamp >= ? GROUP BY day ORDER BY day",
+        "SELECT date(timestamp) as day, band, COUNT(*) as cnt FROM observations WHERE timestamp >= ? GROUP BY day, band ORDER BY day",
         (thirty_days_ago,),
     ).fetchall()
-    daily_dict = {row[0]: row[1] for row in daily_rows}
+    daily_band_dict: dict = {}
+    for day, band, cnt in daily_rows:
+        daily_band_dict.setdefault(day, {})[band] = cnt
     daily_data = []
     for i in range(30):
         day = (now_utc - timedelta(days=29 - i)).strftime("%Y-%m-%d")
-        daily_data.append({"day": day, "count": daily_dict.get(day, 0)})
+        daily_data.append({"day": day, "bands": daily_band_dict.get(day, {})})
 
-    # Weekly spot counts for the last 52 weeks
+    # Weekly spot counts by band for the last 52 weeks
     one_year_ago = (now_utc - timedelta(weeks=52)).strftime("%Y-%m-%dT%H:%M:%SZ")
     weekly_rows = conn.execute(
-        "SELECT strftime('%Y-W%W', timestamp) as week, COUNT(*) as cnt FROM observations WHERE timestamp >= ? GROUP BY week ORDER BY week",
+        "SELECT strftime('%Y-W%W', timestamp) as week, band, COUNT(*) as cnt FROM observations WHERE timestamp >= ? GROUP BY week, band ORDER BY week",
         (one_year_ago,),
     ).fetchall()
-    weekly_dict = {row[0]: row[1] for row in weekly_rows}
+    weekly_band_dict: dict = {}
+    for week, band, cnt in weekly_rows:
+        weekly_band_dict.setdefault(week, {})[band] = cnt
     weekly_data = []
     base_date = now_utc.date() - timedelta(weeks=52)
     base_monday = base_date - timedelta(days=base_date.weekday())
     wd = base_monday
     while wd <= now_utc.date():
         week_str = wd.strftime("%Y-W%W")
-        weekly_data.append({"week": week_str, "date": wd.strftime("%Y-%m-%d"), "count": weekly_dict.get(week_str, 0)})
+        weekly_data.append({"week": week_str, "date": wd.strftime("%Y-%m-%d"), "bands": weekly_band_dict.get(week_str, {})})
         wd += timedelta(weeks=1)
 
     daily_json = json.dumps(daily_data)

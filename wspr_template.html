@@ -386,11 +386,13 @@
 <div class="section">
   <h2>Spots per day — last 30 days</h2>
   <canvas id="dailyChart" style="display:block;width:100%;"></canvas>
+  <div id="dailyLegend" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.75rem;font-family:'JetBrains Mono',monospace;font-size:0.72rem;align-items:center;"></div>
 </div>
 
 <div class="section">
   <h2>Spots per week — last year</h2>
   <canvas id="weeklyChart" style="display:block;width:100%;"></canvas>
+  <div id="weeklyLegend" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.75rem;font-family:'JetBrains Mono',monospace;font-size:0.72rem;align-items:center;"></div>
 </div>
 
 <div class="footer">
@@ -844,9 +846,18 @@ updateAll();
 
 // --- Time-series bar charts ---
 
-function buildBarChart(canvasId, data, labelKey, countKey, labelStep, labelFmt) {
+function buildBandChart(canvasId, data, labelKey, labelStep, labelFmt, legendId) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || !data || data.length === 0) return;
+
+  // Collect and sort all bands across the dataset
+  const bandSet = new Set();
+  for (const d of data) { for (const b of Object.keys(d.bands || {})) bandSet.add(b); }
+  const bandSortKey = b => { const n = parseInt(b); return isNaN(n) ? 99999 : n; };
+  const bands = [...bandSet].sort((a, b) => bandSortKey(a) - bandSortKey(b));
+
+  const maxVal = Math.max(1, ...data.map(d => Object.values(d.bands || {}).reduce((s, v) => s + v, 0)));
+
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.offsetWidth;
   if (!cssW) return;
@@ -860,9 +871,9 @@ function buildBarChart(canvasId, data, labelKey, countKey, labelStep, labelFmt) 
   const pL = 44, pR = 12, pT = 10, pB = 36;
   const cW = cssW - pL - pR;
   const cH = cssH - pT - pB;
-  const n = data.length;
-  const barW = cW / n;
-  const maxVal = Math.max(1, ...data.map(d => d[countKey]));
+  const barW = cW / data.length;
+
+  ctx.clearRect(0, 0, cssW, cssH);
 
   // Gridlines + Y-axis ticks
   ctx.font = '10px JetBrains Mono, monospace';
@@ -877,19 +888,27 @@ function buildBarChart(canvasId, data, labelKey, countKey, labelStep, labelFmt) 
     ctx.fillText(Math.round(maxVal * i / 4), pL - 5, y);
   }
 
-  // Bars
-  for (let i = 0; i < n; i++) {
-    const v = data[i][countKey];
-    const bh = Math.max(v > 0 ? 1 : 0, (v / maxVal) * cH);
-    ctx.fillStyle = v > 0 ? 'rgba(34,211,238,0.6)' : 'rgba(255,255,255,0.03)';
-    ctx.fillRect(pL + i * barW + 0.5, pT + cH - bh, barW - 1, bh);
+  // Stacked bars
+  ctx.globalAlpha = 0.85;
+  for (let i = 0; i < data.length; i++) {
+    const bandData = data[i].bands || {};
+    let yBottom = pT + cH;
+    for (const band of bands) {
+      const count = bandData[band] || 0;
+      if (!count) continue;
+      const bh = Math.max(1, (count / maxVal) * cH);
+      ctx.fillStyle = BAND_COLORS[band] || '#888';
+      ctx.fillRect(pL + i * barW + 0.5, yBottom - bh, barW - 1, bh);
+      yBottom -= bh;
+    }
   }
+  ctx.globalAlpha = 1;
 
   // X-axis labels
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillStyle = '#6b7fa3';
-  for (let i = 0; i < n; i += labelStep) {
+  for (let i = 0; i < data.length; i += labelStep) {
     const lbl = labelFmt ? labelFmt(data[i][labelKey]) : data[i][labelKey];
     ctx.fillText(lbl, pL + (i + 0.5) * barW, pT + cH + 5);
   }
@@ -902,13 +921,22 @@ function buildBarChart(canvasId, data, labelKey, countKey, labelStep, labelFmt) 
   ctx.stroke();
 
   // Store metadata for tooltip
-  canvas._bars = { data, labelKey, countKey, labelFmt, pL, pT, cH, barW };
+  canvas._bandChart = { data, bands, labelKey, labelFmt, pL, pT, cH, barW };
+
+  // Legend
+  const legend = legendId ? document.getElementById(legendId) : null;
+  if (legend) {
+    legend.innerHTML = bands.map(band => {
+      const color = BAND_COLORS[band] || '#888';
+      return `<span style="display:inline-flex;align-items:center;gap:0.3rem;"><span style="display:inline-block;width:10px;height:10px;background:${color};border-radius:2px;opacity:0.85;"></span>${band}</span>`;
+    }).join('');
+  }
 }
 
-// Shared tooltip for bar charts
-const _barTip = (() => {
+// Shared tooltip for daily/weekly band charts
+const _bandChartTip = (() => {
   const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;padding:4px 8px;background:#1a2235;border:1px solid #2a3a52;color:#c8d6e5;font:12px JetBrains Mono,monospace;border-radius:4px;pointer-events:none;display:none;z-index:1000;white-space:nowrap';
+  el.style.cssText = 'position:fixed;padding:6px 10px;background:#1a2235;border:1px solid #2a3a52;color:#c8d6e5;font:11px JetBrains Mono,monospace;border-radius:4px;pointer-events:none;display:none;z-index:1000;line-height:1.6;';
   document.body.appendChild(el);
   return el;
 })();
@@ -916,22 +944,31 @@ const _barTip = (() => {
 ['dailyChart', 'weeklyChart'].forEach(id => {
   const canvas = document.getElementById(id);
   canvas.addEventListener('mousemove', e => {
-    const b = canvas._bars;
-    if (!b) { _barTip.style.display = 'none'; return; }
+    const b = canvas._bandChart;
+    if (!b) { _bandChartTip.style.display = 'none'; return; }
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    if (my < b.pT || my > b.pT + b.cH) { _barTip.style.display = 'none'; return; }
+    if (my < b.pT || my > b.pT + b.cH) { _bandChartTip.style.display = 'none'; return; }
     const i = Math.floor((mx - b.pL) / b.barW);
-    if (i < 0 || i >= b.data.length) { _barTip.style.display = 'none'; return; }
+    if (i < 0 || i >= b.data.length) { _bandChartTip.style.display = 'none'; return; }
     const d = b.data[i];
     const lbl = b.labelFmt ? b.labelFmt(d[b.labelKey]) : d[b.labelKey];
-    _barTip.textContent = `${lbl}: ${d[b.countKey]} spot${d[b.countKey] !== 1 ? 's' : ''}`;
-    _barTip.style.left = (e.clientX + 14) + 'px';
-    _barTip.style.top = (e.clientY - 12) + 'px';
-    _barTip.style.display = 'block';
+    const total = Object.values(d.bands || {}).reduce((s, v) => s + v, 0);
+    if (!total) { _bandChartTip.style.display = 'none'; return; }
+    const lines = [`<b>${lbl}</b> — ${total} spot${total !== 1 ? 's' : ''}`];
+    for (const band of b.bands) {
+      const count = (d.bands || {})[band] || 0;
+      if (!count) continue;
+      const color = BAND_COLORS[band] || '#888';
+      lines.push(`<span style="color:${color}">${band}: ${count}</span>`);
+    }
+    _bandChartTip.innerHTML = lines.join('<br>');
+    _bandChartTip.style.left = (e.clientX + 14) + 'px';
+    _bandChartTip.style.top = (e.clientY - 12) + 'px';
+    _bandChartTip.style.display = 'block';
   });
-  canvas.addEventListener('mouseleave', () => { _barTip.style.display = 'none'; });
+  canvas.addEventListener('mouseleave', () => { _bandChartTip.style.display = 'none'; });
 });
 
 function buildTimelineChart(obs) {
@@ -1087,10 +1124,8 @@ function buildTimelineChart(obs) {
 })();
 
 function buildHistoryCharts() {
-  // Daily: label as MM-DD
-  buildBarChart('dailyChart', DAILY_DATA, 'day', 'count', 5, d => d.substring(5));
-  // Weekly: label as MM-DD (week start date)
-  buildBarChart('weeklyChart', WEEKLY_DATA, 'date', 'count', 4, d => d.substring(5));
+  buildBandChart('dailyChart', DAILY_DATA, 'day', 5, d => d.substring(5), 'dailyLegend');
+  buildBandChart('weeklyChart', WEEKLY_DATA, 'date', 4, d => d.substring(5), 'weeklyLegend');
   buildTimelineChart(_lastObs);
 }
 
