@@ -378,6 +378,12 @@
 </div>
 
 <div class="section">
+  <h2>Spots over time</h2>
+  <canvas id="timelineChart" style="display:block;width:100%;"></canvas>
+  <div id="timelineLegend" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.75rem;font-family:'JetBrains Mono',monospace;font-size:0.72rem;align-items:center;"></div>
+</div>
+
+<div class="section">
   <h2>Spots per day — last 30 days</h2>
   <canvas id="dailyChart" style="display:block;width:100%;"></canvas>
 </div>
@@ -411,6 +417,7 @@ const BAND_COLORS = {
 let currentWindow = 1;
 let sortKey = 'timestamp';
 let sortAsc = false;
+let _lastObs = [];
 
 // --- Auto-reload ---
 let reloadTimer = null;
@@ -528,6 +535,10 @@ function updateAll() {
 
   // Polar / azimuth plot
   buildPolarPlot(obs);
+
+  // Spots over time (stacked by band)
+  buildTimelineChart(obs);
+  _lastObs = obs;
 }
 
 function buildHeatmap(obs) {
@@ -923,11 +934,164 @@ const _barTip = (() => {
   canvas.addEventListener('mouseleave', () => { _barTip.style.display = 'none'; });
 });
 
+function buildTimelineChart(obs) {
+  const canvas = document.getElementById('timelineChart');
+  if (!canvas) return;
+
+  // Bin size (minutes) based on current window
+  const binMinutes = currentWindow <= 1 ? 2
+    : currentWindow <= 6 ? 15
+    : currentWindow <= 12 ? 30
+    : currentWindow <= 24 ? 60
+    : 360;
+
+  const now = Date.now();
+  const startMs = now - currentWindow * 3600 * 1000;
+  const binMs = binMinutes * 60 * 1000;
+  const numBins = Math.ceil(currentWindow * 60 / binMinutes);
+
+  // Collect and sort bands present in this window
+  const bandSet = new Set(obs.map(o => o.band).filter(Boolean));
+  const bandSortKey = b => { const n = parseInt(b); return isNaN(n) ? 99999 : n; };
+  const bands = [...bandSet].sort((a, b) => bandSortKey(a) - bandSortKey(b));
+
+  // Accumulate spot counts per bin per band
+  const bins = Array.from({length: numBins}, () => ({}));
+  for (const o of obs) {
+    const bi = Math.floor((new Date(o.timestamp).getTime() - startMs) / binMs);
+    if (bi < 0 || bi >= numBins) continue;
+    const band = o.band || '?';
+    bins[bi][band] = (bins[bi][band] || 0) + 1;
+  }
+
+  const maxVal = Math.max(1, ...bins.map(b => Object.values(b).reduce((s, v) => s + v, 0)));
+
+  // Canvas setup
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.offsetWidth;
+  if (!cssW) return;
+  const cssH = 180;
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  canvas.style.height = cssH + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pL = 44, pR = 12, pT = 10, pB = 36;
+  const cW = cssW - pL - pR;
+  const cH = cssH - pT - pB;
+  const barW = cW / numBins;
+
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  // Gridlines + Y-axis ticks
+  ctx.font = '10px JetBrains Mono, monospace';
+  for (let i = 0; i <= 4; i++) {
+    const y = pT + cH * (1 - i / 4);
+    ctx.strokeStyle = 'rgba(42,58,82,0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(pL + cW, y); ctx.stroke();
+    ctx.fillStyle = '#6b7fa3';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(Math.round(maxVal * i / 4), pL - 5, y);
+  }
+
+  // Stacked bars
+  ctx.globalAlpha = 0.85;
+  for (let i = 0; i < numBins; i++) {
+    let yBottom = pT + cH;
+    for (const band of bands) {
+      const count = bins[i][band] || 0;
+      if (!count) continue;
+      const bh = Math.max(1, (count / maxVal) * cH);
+      ctx.fillStyle = BAND_COLORS[band] || '#888';
+      ctx.fillRect(pL + i * barW + 0.5, yBottom - bh, barW - 1, bh);
+      yBottom -= bh;
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // X-axis labels
+  const labelStep = Math.max(1, Math.round(numBins / 6));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#6b7fa3';
+  for (let i = 0; i < numBins; i += labelStep) {
+    const d = new Date(startMs + i * binMs);
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dy = String(d.getUTCDate()).padStart(2, '0');
+    const lbl = currentWindow <= 24 ? `${hh}:${mm}` : `${mo}-${dy}`;
+    ctx.fillText(lbl, pL + (i + 0.5) * barW, pT + cH + 5);
+  }
+
+  // Axis lines
+  ctx.strokeStyle = 'rgba(42,58,82,0.8)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pL, pT); ctx.lineTo(pL, pT + cH); ctx.lineTo(pL + cW, pT + cH);
+  ctx.stroke();
+
+  // Store metadata for tooltip
+  canvas._timeline = { bins, bands, startMs, binMs, numBins, pL, pT, cH, barW };
+
+  // Legend
+  const legend = document.getElementById('timelineLegend');
+  if (legend) {
+    legend.innerHTML = bands.map(band => {
+      const color = BAND_COLORS[band] || '#888';
+      return `<span style="display:inline-flex;align-items:center;gap:0.3rem;"><span style="display:inline-block;width:10px;height:10px;background:${color};border-radius:2px;opacity:0.85;"></span>${band}</span>`;
+    }).join('');
+  }
+}
+
+// Tooltip for timeline chart
+(function() {
+  const canvas = document.getElementById('timelineChart');
+  const tip = document.createElement('div');
+  tip.style.cssText = 'position:fixed;padding:6px 10px;background:#1a2235;border:1px solid #2a3a52;color:#c8d6e5;font:11px JetBrains Mono,monospace;border-radius:4px;pointer-events:none;display:none;z-index:1000;line-height:1.6;';
+  document.body.appendChild(tip);
+
+  canvas.addEventListener('mousemove', e => {
+    const t = canvas._timeline;
+    if (!t) { tip.style.display = 'none'; return; }
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    if (my < t.pT || my > t.pT + t.cH) { tip.style.display = 'none'; return; }
+    const i = Math.floor((mx - t.pL) / t.barW);
+    if (i < 0 || i >= t.numBins) { tip.style.display = 'none'; return; }
+
+    const bin = t.bins[i];
+    const total = Object.values(bin).reduce((s, v) => s + v, 0);
+    if (!total) { tip.style.display = 'none'; return; }
+
+    const d = new Date(t.startMs + i * t.binMs);
+    const ts = d.toUTCString().replace(/ \d{4}.*/, '') + ' UTC';
+    const lines = [`<b>${ts}</b> — ${total} spot${total !== 1 ? 's' : ''}`];
+    for (const band of t.bands) {
+      const count = bin[band] || 0;
+      if (!count) continue;
+      const color = BAND_COLORS[band] || '#888';
+      lines.push(`<span style="color:${color}">${band}: ${count}</span>`);
+    }
+    tip.innerHTML = lines.join('<br>');
+    tip.style.left = (e.clientX + 14) + 'px';
+    tip.style.top = (e.clientY - 12) + 'px';
+    tip.style.display = 'block';
+  });
+
+  canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+})();
+
 function buildHistoryCharts() {
   // Daily: label as MM-DD
   buildBarChart('dailyChart', DAILY_DATA, 'day', 'count', 5, d => d.substring(5));
   // Weekly: label as MM-DD (week start date)
   buildBarChart('weeklyChart', WEEKLY_DATA, 'date', 'count', 4, d => d.substring(5));
+  buildTimelineChart(_lastObs);
 }
 
 buildHistoryCharts();
