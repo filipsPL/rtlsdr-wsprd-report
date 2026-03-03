@@ -297,6 +297,18 @@
     height: auto;
   }
 
+  .status-live {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--green);
+  }
+
+  .status-offline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--red);
+  }
+
   /* Leaflet dark tiles */
   .leaflet-container {
     background: var(--bg);
@@ -307,7 +319,7 @@
 
 <div class="header">
   <h1>📡 WSPR Monitor</h1>
-  <div class="meta">QTH: ${LOCATOR} (${MY_LAT}°, ${MY_LON}°) · Generated: ${GENERATED}</div>
+  <div class="meta">QTH: ${LOCATOR} (${MY_LAT}°, ${MY_LON}°) · Generated: ${GENERATED} &ensp;${STATUS_BADGE}</div>
 </div>
 
 <div class="controls" id="timeControls">
@@ -365,6 +377,16 @@
   <div class="heatmap-container" id="heatmapContainer"></div>
 </div>
 
+<div class="section">
+  <h2>Spots per day — last 30 days</h2>
+  <canvas id="dailyChart" style="display:block;width:100%;"></canvas>
+</div>
+
+<div class="section">
+  <h2>Spots per week — last year</h2>
+  <canvas id="weeklyChart" style="display:block;width:100%;"></canvas>
+</div>
+
 <div class="footer">
   <a href="https://github.com/filipsPL/rtlsdr-wsprd-report">WSPR Analyzer</a> · Data from WSPR logs · Map tiles © OpenStreetMap contributors
 </div>
@@ -375,6 +397,8 @@ const HEATMAP_DATA = ${HEATMAP_JSON};
 const ALL_BANDS = ${BANDS_JSON};
 const MY_LAT = ${MY_LAT};
 const MY_LON = ${MY_LON};
+const DAILY_DATA = ${DAILY_JSON};
+const WEEKLY_DATA = ${WEEKLY_JSON};
 
 // Band colors for map lines
 const BAND_COLORS = {
@@ -806,6 +830,108 @@ document.querySelectorAll('thead th[data-sort]').forEach(th => {
 
 // Initial render
 updateAll();
+
+// --- Time-series bar charts ---
+
+function buildBarChart(canvasId, data, labelKey, countKey, labelStep, labelFmt) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !data || data.length === 0) return;
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.offsetWidth;
+  if (!cssW) return;
+  const cssH = 180;
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  canvas.style.height = cssH + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pL = 44, pR = 12, pT = 10, pB = 36;
+  const cW = cssW - pL - pR;
+  const cH = cssH - pT - pB;
+  const n = data.length;
+  const barW = cW / n;
+  const maxVal = Math.max(1, ...data.map(d => d[countKey]));
+
+  // Gridlines + Y-axis ticks
+  ctx.font = '10px JetBrains Mono, monospace';
+  for (let i = 0; i <= 4; i++) {
+    const y = pT + cH * (1 - i / 4);
+    ctx.strokeStyle = 'rgba(42,58,82,0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(pL + cW, y); ctx.stroke();
+    ctx.fillStyle = '#6b7fa3';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(Math.round(maxVal * i / 4), pL - 5, y);
+  }
+
+  // Bars
+  for (let i = 0; i < n; i++) {
+    const v = data[i][countKey];
+    const bh = Math.max(v > 0 ? 1 : 0, (v / maxVal) * cH);
+    ctx.fillStyle = v > 0 ? 'rgba(34,211,238,0.6)' : 'rgba(255,255,255,0.03)';
+    ctx.fillRect(pL + i * barW + 0.5, pT + cH - bh, barW - 1, bh);
+  }
+
+  // X-axis labels
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#6b7fa3';
+  for (let i = 0; i < n; i += labelStep) {
+    const lbl = labelFmt ? labelFmt(data[i][labelKey]) : data[i][labelKey];
+    ctx.fillText(lbl, pL + (i + 0.5) * barW, pT + cH + 5);
+  }
+
+  // Axis lines
+  ctx.strokeStyle = 'rgba(42,58,82,0.8)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pL, pT); ctx.lineTo(pL, pT + cH); ctx.lineTo(pL + cW, pT + cH);
+  ctx.stroke();
+
+  // Store metadata for tooltip
+  canvas._bars = { data, labelKey, countKey, labelFmt, pL, pT, cH, barW };
+}
+
+// Shared tooltip for bar charts
+const _barTip = (() => {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;padding:4px 8px;background:#1a2235;border:1px solid #2a3a52;color:#c8d6e5;font:12px JetBrains Mono,monospace;border-radius:4px;pointer-events:none;display:none;z-index:1000;white-space:nowrap';
+  document.body.appendChild(el);
+  return el;
+})();
+
+['dailyChart', 'weeklyChart'].forEach(id => {
+  const canvas = document.getElementById(id);
+  canvas.addEventListener('mousemove', e => {
+    const b = canvas._bars;
+    if (!b) { _barTip.style.display = 'none'; return; }
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    if (my < b.pT || my > b.pT + b.cH) { _barTip.style.display = 'none'; return; }
+    const i = Math.floor((mx - b.pL) / b.barW);
+    if (i < 0 || i >= b.data.length) { _barTip.style.display = 'none'; return; }
+    const d = b.data[i];
+    const lbl = b.labelFmt ? b.labelFmt(d[b.labelKey]) : d[b.labelKey];
+    _barTip.textContent = `${lbl}: ${d[b.countKey]} spot${d[b.countKey] !== 1 ? 's' : ''}`;
+    _barTip.style.left = (e.clientX + 14) + 'px';
+    _barTip.style.top = (e.clientY - 12) + 'px';
+    _barTip.style.display = 'block';
+  });
+  canvas.addEventListener('mouseleave', () => { _barTip.style.display = 'none'; });
+});
+
+function buildHistoryCharts() {
+  // Daily: label as MM-DD
+  buildBarChart('dailyChart', DAILY_DATA, 'day', 'count', 5, d => d.substring(5));
+  // Weekly: label as MM-DD (week start date)
+  buildBarChart('weeklyChart', WEEKLY_DATA, 'date', 'count', 4, d => d.substring(5));
+}
+
+buildHistoryCharts();
+window.addEventListener('resize', buildHistoryCharts);
 </script>
 
 </body>

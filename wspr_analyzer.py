@@ -6,6 +6,8 @@ Reads WSPR TSV logs, stores in SQLite, generates static HTML dashboard.
 Usage: python wspr_analyzer.py <tsv_file> <my_locator> [--db wspr.db] [--output wspr_report.html]
 """
 
+from __future__ import annotations
+
 import argparse
 import sqlite3
 import math
@@ -177,7 +179,7 @@ def query_observations(conn: sqlite3.Connection, since: str | None = None) -> li
 # --- HTML Generation ---
 
 
-def generate_html(conn: sqlite3.Connection, my_locator: str, output_path: str):
+def generate_html(conn: sqlite3.Connection, my_locator: str, output_path: str, file_is_fresh: bool = False):
     my_coords = maidenhead_to_latlon(my_locator)
     if not my_coords:
         print(f"Error: invalid locator '{my_locator}'", file=sys.stderr)
@@ -228,12 +230,49 @@ def generate_html(conn: sqlite3.Connection, my_locator: str, output_path: str):
     heatmap_json = json.dumps(heatmap_data)
     bands_json = json.dumps(sorted_bands)
 
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now_utc = datetime.now(timezone.utc)
+    now_str = now_utc.strftime("%Y-%m-%d %H:%M UTC")
+
+    # Daily spot counts for the last 30 days
+    thirty_days_ago = (now_utc - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    daily_rows = conn.execute(
+        "SELECT date(timestamp) as day, COUNT(*) as cnt FROM observations WHERE timestamp >= ? GROUP BY day ORDER BY day",
+        (thirty_days_ago,),
+    ).fetchall()
+    daily_dict = {row[0]: row[1] for row in daily_rows}
+    daily_data = []
+    for i in range(30):
+        day = (now_utc - timedelta(days=29 - i)).strftime("%Y-%m-%d")
+        daily_data.append({"day": day, "count": daily_dict.get(day, 0)})
+
+    # Weekly spot counts for the last 52 weeks
+    one_year_ago = (now_utc - timedelta(weeks=52)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    weekly_rows = conn.execute(
+        "SELECT strftime('%Y-W%W', timestamp) as week, COUNT(*) as cnt FROM observations WHERE timestamp >= ? GROUP BY week ORDER BY week",
+        (one_year_ago,),
+    ).fetchall()
+    weekly_dict = {row[0]: row[1] for row in weekly_rows}
+    weekly_data = []
+    base_date = now_utc.date() - timedelta(weeks=52)
+    base_monday = base_date - timedelta(days=base_date.weekday())
+    wd = base_monday
+    while wd <= now_utc.date():
+        week_str = wd.strftime("%Y-W%W")
+        weekly_data.append({"week": week_str, "date": wd.strftime("%Y-%m-%d"), "count": weekly_dict.get(week_str, 0)})
+        wd += timedelta(weeks=1)
+
+    daily_json = json.dumps(daily_data)
+    weekly_json = json.dumps(weekly_data)
 
     # Load external HTML template
     template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wspr_template.html")
     with open(template_path, "r") as f:
         template = Template(f.read())
+
+    if file_is_fresh:
+        status_badge = '<span class="status-live">&#9679; LIVE</span>'
+    else:
+        status_badge = '<span class="status-offline">&#9679; OFFLINE</span>'
 
     html = template.safe_substitute(
         LOCATOR=my_locator,
@@ -243,6 +282,9 @@ def generate_html(conn: sqlite3.Connection, my_locator: str, output_path: str):
         OBS_JSON=obs_json,
         HEATMAP_JSON=heatmap_json,
         BANDS_JSON=bands_json,
+        DAILY_JSON=daily_json,
+        WEEKLY_JSON=weekly_json,
+        STATUS_BADGE=status_badge,
     )
 
     with open(output_path, "w") as f:
@@ -271,8 +313,12 @@ def main():
     after = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
     print(f"  {after - before} new observations added (total: {after})")
 
+    file_age = datetime.now(timezone.utc) - datetime.fromtimestamp(os.path.getmtime(args.tsv_file), tz=timezone.utc)
+    file_is_fresh = file_age.total_seconds() <= 120
+    print(f"Log file age: {int(file_age.total_seconds())}s → {'LIVE' if file_is_fresh else 'OFFLINE'}")
+
     print(f"Generating report → {args.output}")
-    generate_html(conn, args.locator, args.output)
+    generate_html(conn, args.locator, args.output, file_is_fresh=file_is_fresh)
     print("Done.")
     conn.close()
 
