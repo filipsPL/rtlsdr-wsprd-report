@@ -162,6 +162,7 @@ def import_tsv(conn: sqlite3.Connection, tsv_path: str) -> int:
                 print(f"Skipping malformed row: {e}", file=sys.stderr)
                 continue
     conn.commit()
+
     # Get actual count
     return inserted
 
@@ -317,8 +318,9 @@ def main():
     after = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
     print(f"  {after - before} new observations added (total: {after})")
 
-    file_age = datetime.now(timezone.utc) - datetime.fromtimestamp(os.path.getmtime(args.tsv_file), tz=timezone.utc)
-    file_is_fresh = file_age.total_seconds() <= 120
+    file_mtime = os.lstat(args.tsv_file).st_mtime  # lstat: don't follow symlink
+    file_age = datetime.now(timezone.utc) - datetime.fromtimestamp(file_mtime, tz=timezone.utc)
+    file_is_fresh = file_age.total_seconds() <= 365 # adjust to acquisition time in hopper
     print(f"Log file age: {int(file_age.total_seconds())}s → {'LIVE' if file_is_fresh else 'OFFLINE'}")
 
     print(f"Generating report → {args.output}")

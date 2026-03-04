@@ -434,9 +434,18 @@ function toggleAutoReload(enabled) {
   }
 }
 
-document.getElementById('autoReload').addEventListener('change', function() {
+const _autoReloadEl = document.getElementById('autoReload');
+
+_autoReloadEl.addEventListener('change', function() {
+  localStorage.setItem('wspr_autoreload', this.checked ? '1' : '0');
   toggleAutoReload(this.checked);
 });
+
+// Restore auto-reload preference across page reloads
+if (localStorage.getItem('wspr_autoreload') === '1') {
+  _autoReloadEl.checked = true;
+  toggleAutoReload(true);
+}
 
 // --- Map setup ---
 const map = L.map('map', { zoomControl: true }).setView([MY_LAT, MY_LON], 4);
