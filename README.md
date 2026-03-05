@@ -1,12 +1,15 @@
 # WSPR Monitor
 
-A set of *simple* tools for unattended Weak Signal Propagation Reporter [WSPR](https://en.wikipedia.org/wiki/WSPR_(amateur_radio_software)) spot collection and visualization using an RTL-SDR receiver and [rtlsdr_wsprd](https://github.com/filipsPL/rtlsdr-wsprd/) (modified). The report is single, self-containing html file, so no telegraf, grafana, influxdb etc. ;-) 
+A set of *simple* tools for unattended Weak Signal Propagation Reporter [WSPR](https://en.wikipedia.org/wiki/WSPR_(amateur_radio_software)) spot collection and visualization using an RTL-SDR receiver and [rtlsdr_wsprd](https://github.com/filipsPL/rtlsdr-wsprd/) (modified). The report **is single, self-containing html file**, so no telegraf, grafana, influxdb etc. ;-) 
 
 [![Run for sample data](https://github.com/filipsPL/rtlsdr-wsprd-report/actions/workflows/test.yml/badge.svg)](https://github.com/filipsPL/rtlsdr-wsprd-report/actions/workflows/test.yml)
 
 ## Components
 
 **`wspr_hopper.sh`** — Band-hopping collector. Cycles `rtlsdr_wsprd` ([fork](https://github.com/filipsPL/rtlsdr-wsprd/)) through configured bands, writing spots to daily TSV log files (`wspr_logs/YYYY-mm-dd.tsv`). A symlink `spots-current.tsv` always points to today's file. Logs older than 30 days are automatically removed.
+
+- **Day/Night band selection** — Two separate band lists are used depending on the UTC hour (default: day 06–18 UTC, night 18–06 UTC). Lower bands (160m–40m) are favored at night for better propagation, higher bands (40m–6m) during the day. The boundary hours and band lists are configurable at the top of the script.
+- **WSPR-aligned timeout** — Instead of a fixed duration, listening time is dynamically calculated to align with the WSPR 2-minute transmission cycle. The script waits until the next even-minute UTC boundary, then listens for a configurable number of full cycles (`WSPR_CYCLES`, default: 2). This ensures every captured transmission is complete and minimizes idle time between bands.
 
 **`wspr_analyzer.py`** — Report generator. Reads WSPR TSV logs, stores observations in a SQLite database (with deduplication), and produces a self-contained static HTML dashboard (~80-200 kb, depending on the number of observations) covering the last 7 days.
 
@@ -34,17 +37,33 @@ The dashboard includes:
 
 ## Usage
 
-### Collecting spots
+### Collecting spots - `wspr_hopper.sh`
 
-Edit the configuration section at the top of `wspr_hopper.sh` (callsign, locator, bands, gain), then run:
+Edit the configuration section at the top of `wspr_hopper.sh` (callsign, locator, bands, gain, cycles), then run:
 
 ```bash
 chmod +x wspr_hopper.sh
 ./wspr_hopper.sh
 ```
-It will loop indefinitely, spending ~5 minutes on each band. Spots are appended to `wspr_logs/YYYY-mm-dd.tsv`. It has incorporated `wspr_analyzer.py` call every time the band is changed.
 
-### Generating the report
+It will loop indefinitely, automatically switching between day and night band sets. With the default `WSPR_CYCLES=2`, each band session lasts ~4 minutes (2 × 120s WSPR periods, plus alignment wait). Spots are appended to `wspr_logs/YYYY-mm-dd.tsv`. The report is regenerated after each band session.
+
+Key configuration variables:
+
+| Variable      | Default                          | Description                                                        |
+| ------------- | -------------------------------- | ------------------------------------------------------------------ |
+| `BANDS_DAY`   | `40m 30m 20m 17m 15m 12m 10m 6m` | Bands used during daytime (06–18 UTC)                              |
+| `BANDS_NIGHT` | `160m 80m 60m 40m 30m`           | Bands used during nighttime (18–06 UTC)                            |
+| `DAY_START`   | `6`                              | UTC hour when day begins                                           |
+| `DAY_END`     | `18`                             | UTC hour when night begins                                         |
+| `WSPR_CYCLES` | `2`                              | Number of full WSPR TX cycles per band                             |
+| `MARGIN`      | `7`                              | Time needed to close the current session and start new. See below  |
+
+
+Adjusting `MARGIN` variable. Use the default settings and observe for messages *Wait for time sync (start in XXX sec)*. If XXX is small (like 2 seconds or so) the `MARGIN` is ok. If it is 0, it is risky as we may miss the slot. If it is higher than, let say, 100 seconds, `MARGIN` is too small, so increase the value.
+
+
+### Generating the report `wspr_analyzer.py`
 
 (when used without `wspr_hopper.sh` or if you want your reports more frequently than every `wspr_hopper.sh` loop)
 

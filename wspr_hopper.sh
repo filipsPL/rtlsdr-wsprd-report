@@ -8,9 +8,12 @@ set -euo pipefail
 # --- Configuration ---
 CALLSIGN="SP5FLS"
 LOCATOR="KO02MC77"
-DURATION=285                                      # minimum seconds per band session
-MARGIN=7                                          # seconds before even UTC minute to start next band
-BANDS="20m 40m 20m 30m 20m 17m 20m 15m 20m 12m 20m 10m 6m 20m 80m"
+WSPR_CYCLES=2                                     # number of full WSPR cycles (120s each) per band session
+MARGIN=7                                          # seconds to subtract from WSPR_CYCLES*120 to ensure we stop before the next cycle starts
+BANDS_DAY="40m 30m 20m 17m 15m 12m 10m 6m"       # 06-18 UTC
+BANDS_NIGHT="160m 80m 60m 40m 30m"                # 18-06 UTC
+DAY_START=6                                       # UTC hour when day begins
+DAY_END=18                                        # UTC hour when night begins
 RTL_GAIN=39
 
 WSPRD_PATH="/home/filips/bin/rtlsdr_wsprd"
@@ -45,16 +48,28 @@ cleanup_old_logs() {
     find "$LOG_DIR" -name "*.tsv" -type f -mtime "+${LOG_RETENTION_DAYS}" -delete
 }
 
+# Return the appropriate band list for the current UTC hour
+current_bands() {
+    local hour
+    hour=$(date -u +%-H)
+    if (( hour >= DAY_START && hour < DAY_END )); then
+        echo "$BANDS_DAY"
+    else
+        echo "$BANDS_NIGHT"
+    fi
+}
+
 # Calculate seconds from now until the next aligned band-start:
-#   even UTC minute - MARGIN seconds, at least DURATION seconds away.
+#   even UTC minute - MARGIN seconds, at least WSPR_CYCLES*120 seconds away.
 # WSPR cycle = 120 s; aligned phase = 120 - MARGIN (e.g. 113 for MARGIN=7).
 calc_duration() {
-    local now cycle target secs
+    local now cycle min_duration target secs
     now=$(date -u +%s)
     cycle=120
+    min_duration=$(( WSPR_CYCLES * cycle ))
     target=$(( cycle - MARGIN ))
     secs=$(( (target - now % cycle + cycle) % cycle ))
-    while (( secs < DURATION )); do
+    while (( secs < min_duration )); do
         secs=$(( secs + cycle ))
     done
     echo "$secs"
@@ -79,7 +94,8 @@ while true; do
     update_symlink "$logfile"
     cleanup_old_logs
 
-    for band in $BANDS; do
+    bands=$(current_bands)
+    for band in $bands; do
         # Date may have rolled over mid-cycle — check again
         logfile="$(today_log)"
         update_symlink "$logfile"
