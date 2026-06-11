@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WSPR RX Report — ${TX_CALLSIGN}</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0e17;
+    --surface: #111827;
+    --surface2: #1a2235;
+    --border: #2a3a52;
+    --text: #c8d6e5;
+    --text-dim: #6b7fa3;
+    --accent: #22d3ee;
+    --accent2: #a78bfa;
+    --accent3: #f472b6;
+    --green: #34d399;
+    --orange: #fb923c;
+    --red: #f87171;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .header {
+    padding: 2rem 2rem 1rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .header h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+  }
+
+  .header .meta {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .controls {
+    padding: 1rem 2rem;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+  }
+
+  .controls button {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .controls button:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  .controls button.active {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+
+  .controls .separator {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+    margin: 0 0.5rem;
+  }
+
+  .controls label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    user-select: none;
+  }
+
+  .controls label input[type="checkbox"] {
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .stats-bar {
+    padding: 1rem 2rem;
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+  }
+
+  .stat {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+  }
+
+  .stat .label { color: var(--text-dim); }
+  .stat .value { color: var(--accent); font-weight: 600; font-size: 1.1rem; }
+
+  #map {
+    height: 450px;
+    width: 100%;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section {
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section h2 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--accent2);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 1rem;
+  }
+
+  .heatmap-container {
+    overflow-x: auto;
+  }
+
+  .heatmap {
+    display: grid;
+    gap: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+  }
+
+  .heatmap .cell {
+    width: 100%;
+    min-width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    color: var(--text-dim);
+    transition: transform 0.1s;
+  }
+
+  .heatmap .cell:hover {
+    transform: scale(1.3);
+    z-index: 10;
+    position: relative;
+  }
+
+  .heatmap .label-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    min-width: 28px;
+  }
+
+  .table-wrapper {
+    overflow-x: auto;
+    max-height: 500px;
+    overflow-y: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface2);
+    color: var(--text-dim);
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    padding: 0.6rem 0.8rem;
+    text-align: left;
+    border-bottom: 2px solid var(--border);
+    cursor: pointer;
+  }
+
+  thead th:hover {
+    color: var(--accent);
+  }
+
+  tbody tr {
+    border-bottom: 1px solid rgba(42, 58, 82, 0.4);
+    transition: background 0.1s;
+  }
+
+  tbody tr:hover {
+    background: rgba(34, 211, 238, 0.05);
+  }
+
+  tbody td {
+    padding: 0.5rem 0.8rem;
+    white-space: nowrap;
+  }
+
+  .band-tag {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 0.72rem;
+  }
+
+  .band-160m { background: #7c3aed33; color: #a78bfa; }
+  .band-80m  { background: #6366f133; color: #818cf8; }
+  .band-60m  { background: #3b82f633; color: #60a5fa; }
+  .band-40m  { background: #0ea5e933; color: #22d3ee; }
+  .band-30m  { background: #14b8a633; color: #2dd4bf; }
+  .band-20m  { background: #22c55e33; color: #4ade80; }
+  .band-17m  { background: #84cc1633; color: #a3e635; }
+  .band-15m  { background: #eab30833; color: #fbbf24; }
+  .band-12m  { background: #f9731633; color: #fb923c; }
+  .band-10m  { background: #ef444433; color: #f87171; }
+  .band-6m   { background: #ec489933; color: #f472b6; }
+  .band-2m   { background: #d946ef33; color: #e879f9; }
+
+  .callsign {
+    color: var(--green);
+    font-weight: 600;
+  }
+
+  .distance {
+    color: var(--orange);
+  }
+
+  .footer {
+    padding: 1rem 2rem;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .polar-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .polar-container canvas {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .section-window-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--text-dim);
+    text-transform: none;
+    letter-spacing: 0;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.1rem 0.4rem;
+    vertical-align: middle;
+  }
+
+  .leaflet-container {
+    background: var(--bg);
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📡 WSPR RX Report</h1>
+  <div class="meta">TX: ${TX_CALLSIGN} · TX QTH: ${TX_LOC} (${TX_LAT}°, ${TX_LON}°) · Generated: ${GENERATED} | see also: <a href="wspr_rx_local.html">RX Local</a></div>
+</div>
+
+<div class="controls" id="timeControls">
+  <button data-window="1" class="active">1h</button>
+  <button data-window="6">6h</button>
+  <button data-window="12">12h</button>
+  <button data-window="24">24h</button>
+  <button data-window="168">7d</button>
+  <div class="separator"></div>
+  <label><input type="checkbox" id="autoReload"> Auto-reload (2 min)</label>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat"><span class="label">Spots:</span><span class="value" id="statSpots">0</span></div>
+  <div class="stat"><span class="label">Receivers:</span><span class="value" id="statReceivers">0</span></div>
+  <div class="stat"><span class="label">Bands:</span><span class="value" id="statBands">0</span></div>
+  <div class="stat"><span class="label">Max dist:</span><span class="value" id="statMaxDist">—</span></div>
+  <div class="stat"><span class="label">Best SNR:</span><span class="value" id="statBestSnr">—</span></div>
+</div>
+
+<div id="map"></div>
+
+<div class="section">
+  <h2>RX Spots — Received by others <span id="rxWindowLabel" class="section-window-label"></span></h2>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="time">Date/Time</th>
+          <th data-sort="rx_sign">RX Callsign</th>
+          <th data-sort="rx_loc">RX Locator</th>
+          <th data-sort="tx_loc">TX Locator</th>
+          <th data-sort="band_label">Band</th>
+          <th data-sort="frequency">Freq (MHz)</th>
+          <th data-sort="snr">SNR</th>
+          <th data-sort="distance">Distance</th>
+          <th data-sort="power">Power</th>
+          <th data-sort="drift">Drift</th>
+        </tr>
+      </thead>
+      <tbody id="rxBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Azimuth — Receiver Count by Bearing</h2>
+  <div class="polar-container">
+    <canvas id="polarCanvas" width="600" height="600"></canvas>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Heatmap — Hour × Band</h2>
+  <div class="heatmap-container" id="heatmapContainer"></div>
+</div>
+
+<div class="section">
+  <h2>Spots over time</h2>
+  <canvas id="timelineChart" style="display:block;width:100%;"></canvas>
+  <div id="timelineLegend" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.75rem;font-family:'JetBrains Mono',monospace;font-size:0.72rem;align-items:center;"></div>
+</div>
+
+<div class="footer">
+  <a href="https://github.com/filipsPL/rtlsdr-wsprd-report">WSPR Analyzer</a> · Data from wspr.live · Map tiles © OpenStreetMap contributors
+</div>
+
+<script>
+const ALL_RX = ${RX_JSON};
+const TX_LAT = ${TX_LAT};
+const TX_LON = ${TX_LON};
+const TX_LOC = '${TX_LOC}';
+
+const BAND_COLORS = {
+  '2200m': '#7c3aed', '630m': '#6366f1', '160m': '#a78bfa', '80m': '#818cf8',
+  '60m': '#60a5fa', '40m': '#22d3ee', '30m': '#2dd4bf', '20m': '#4ade80',
+  '17m': '#a3e635', '15m': '#fbbf24', '12m': '#fb923c', '10m': '#f87171',
+  '6m': '#f472b6', '2m': '#e879f9'
+};
+
+let currentWindow = 1;
+let sortKey = 'time';
+let sortAsc = false;
+
+function windowLabel(hours) {
+  if (hours === 1)   return '1h';
+  if (hours === 6)   return '6h';
+  if (hours === 12)  return '12h';
+  if (hours === 24)  return '24h';
+  if (hours === 168) return '7d';
+  return hours + 'h';
+}
+
+// --- Auto-reload ---
+let reloadTimer = null;
+function toggleAutoReload(enabled) {
+  if (reloadTimer) { clearInterval(reloadTimer); reloadTimer = null; }
+  if (enabled) reloadTimer = setInterval(() => location.reload(), 2 * 60 * 1000);
+}
+
+const _autoReloadEl = document.getElementById('autoReload');
+_autoReloadEl.addEventListener('change', function() {
+  localStorage.setItem('wspr_rx_autoreload', this.checked ? '1' : '0');
+  toggleAutoReload(this.checked);
+});
+if (localStorage.getItem('wspr_rx_autoreload') === '1') {
+  _autoReloadEl.checked = true;
+  toggleAutoReload(true);
+}
+
+// --- Map ---
+const map = L.map('map', { zoomControl: true }).setView([TX_LAT, TX_LON], 3);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap contributors, © CARTO',
+  maxZoom: 18
+}).addTo(map);
+
+// TX home marker
+L.circleMarker([TX_LAT, TX_LON], {
+  radius: 8, fillColor: '#22d3ee', color: '#fff', weight: 2, fillOpacity: 0.9
+}).addTo(map).bindPopup(`<b>TX: ${TX_LOC}</b><br>${TX_LAT}°, ${TX_LON}°`);
+
+let linesLayer = L.layerGroup().addTo(map);
+let markersLayer = L.layerGroup().addTo(map);
+
+function filterRx(windowHours) {
+  if (windowHours === 0) return ALL_RX;
+  const cutoff = new Date(Date.now() - windowHours * 3600 * 1000);
+  return ALL_RX.filter(s => new Date(s.time + 'Z') >= cutoff);
+}
+
+function updateAll() {
+  const spots = filterRx(currentWindow);
+
+  document.getElementById('rxWindowLabel').textContent = windowLabel(currentWindow);
+  document.getElementById('statSpots').textContent = spots.length;
+
+  // Deduplicate receivers (best SNR per rx_sign+rx_loc)
+  const receivers = {};
+  for (const s of spots) {
+    if (s.rx_lat == null || s.rx_lon == null) continue;
+    const key = s.rx_sign + '|' + s.rx_loc;
+    if (!receivers[key] || s.snr > receivers[key].snr) receivers[key] = s;
+  }
+
+  document.getElementById('statReceivers').textContent = Object.keys(receivers).length;
+
+  const bands = new Set(spots.map(s => s.band_label).filter(Boolean));
+  document.getElementById('statBands').textContent = bands.size;
+
+  const maxDist = spots.reduce((m, s) => s.distance != null ? Math.max(m, s.distance) : m, 0);
+  document.getElementById('statMaxDist').textContent = maxDist > 0 ? maxDist.toLocaleString() + ' km' : '—';
+
+  const bestSnr = spots.reduce((m, s) => s.snr != null ? Math.max(m, s.snr) : m, -999);
+  document.getElementById('statBestSnr').textContent = bestSnr > -999 ? bestSnr + ' dB' : '—';
+
+  // Map
+  linesLayer.clearLayers();
+  markersLayer.clearLayers();
+
+  for (const s of Object.values(receivers)) {
+    const txLat = s.tx_lat ?? TX_LAT;
+    const txLon = s.tx_lon ?? TX_LON;
+    const color = BAND_COLORS[s.band_label] || '#f472b6';
+    L.polyline([[txLat, txLon], [s.rx_lat, s.rx_lon]], {
+      color: color, weight: 1.5, opacity: 0.6, dashArray: '5,5'
+    }).addTo(linesLayer);
+    L.circleMarker([s.rx_lat, s.rx_lon], {
+      radius: 5, fillColor: color, color: '#fff', weight: 1, fillOpacity: 0.8
+    }).addTo(markersLayer).bindPopup(
+      `<b>${s.rx_sign}</b><br>RX: ${s.rx_loc} · TX: ${s.tx_loc || '?'}<br>${s.band_label} · ${s.distance ?? '?'} km<br>SNR: ${s.snr} dB · ${s.power} dBm`
+    );
+  }
+
+  // Table
+  const sorted = [...spots].sort((a, b) => {
+    let va = a[sortKey], vb = b[sortKey];
+    if (va == null) return 1; if (vb == null) return -1;
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
+    if (va < vb) return sortAsc ? -1 : 1;
+    if (va > vb) return sortAsc ? 1 : -1;
+    return 0;
+  });
+
+  const tbody = document.getElementById('rxBody');
+  tbody.innerHTML = sorted.map(s => {
+    const bandClass = 'band-' + (s.band_label || '').replace(/[^a-z0-9m]/gi, '');
+    const freqMhz = s.frequency ? (s.frequency / 1e6).toFixed(6) : '';
+    const distHtml = s.distance != null
+      ? `<span class="distance">${s.distance.toLocaleString()} km</span>` : '—';
+    return `<tr>
+      <td>${s.time}</td>
+      <td><span class="callsign">${s.rx_sign}</span></td>
+      <td>${s.rx_loc}</td>
+      <td>${s.tx_loc || '—'}</td>
+      <td><span class="band-tag ${bandClass}">${s.band_label}</span></td>
+      <td>${freqMhz}</td>
+      <td>${s.snr}</td>
+      <td>${distHtml}</td>
+      <td>${s.power} dBm</td>
+      <td>${s.drift}</td>
+    </tr>`;
+  }).join('');
+
+  buildHeatmap(spots);
+  buildPolarPlot(spots);
+  buildTimelineChart(spots);
+}
+
+function buildHeatmap(spots) {
+  const hm = {};
+  const bandsInView = new Set();
+  let maxCount = 0;
+
+  for (const s of spots) {
+    const hour = parseInt((s.time || '0000').substring(11, 13) || '0');
+    const band = s.band_label || '?';
+    const key = hour + '|' + band;
+    hm[key] = (hm[key] || 0) + 1;
+    if (hm[key] > maxCount) maxCount = hm[key];
+    bandsInView.add(band);
+  }
+
+  const bandSortKey = b => {
+    const n = parseInt(b.replace('m', '').replace('MHz', '9999'));
+    return isNaN(n) ? 99999 : n;
+  };
+  const bands = [...bandsInView].sort((a, b) => bandSortKey(a) - bandSortKey(b));
+
+  const container = document.getElementById('heatmapContainer');
+  let html = `<div class="heatmap" style="grid-template-columns: 40px repeat(${bands.length}, 1fr);">`;
+
+  html += '<div class="label-cell"></div>';
+  for (const band of bands) html += `<div class="label-cell">${band}</div>`;
+
+  for (let h = 0; h < 24; h++) {
+    html += `<div class="label-cell">${String(h).padStart(2, '0')}</div>`;
+    for (const band of bands) {
+      const count = hm[h + '|' + band] || 0;
+      const intensity = maxCount > 0 ? count / maxCount : 0;
+      let bg;
+      if (count === 0) {
+        bg = 'rgba(255,255,255,0.02)';
+      } else {
+        const r = Math.round(34 + intensity * 34);
+        const g = Math.round(211 * intensity);
+        const b2 = Math.round(180 + intensity * 58);
+        bg = `rgba(${r}, ${g}, ${b2}, ${0.15 + intensity * 0.7})`;
+      }
+      html += `<div class="cell" style="background:${bg}" title="${h}:00 ${band}: ${count} spots">${count || ''}</div>`;
+    }
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function buildPolarPlot(spots) {
+  const canvas = document.getElementById('polarCanvas');
+  const dpr = window.devicePixelRatio || 1;
+  const cssSize = 600;
+  canvas.width = cssSize * dpr;
+  canvas.height = cssSize * dpr;
+  canvas.style.width = cssSize + 'px';
+  canvas.style.height = cssSize + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, cssSize, cssSize);
+
+  const cx = cssSize / 2, cy = cssSize / 2;
+  const maxRadius = cssSize / 2 - 50;
+  const NUM_SECTORS = 16;
+  const sectorAngle = (2 * Math.PI) / NUM_SECTORS;
+  const sectorDeg = 360 / NUM_SECTORS;
+
+  function calcBearing(lat1, lon1, lat2, lon2) {
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const rlat1 = lat1 * Math.PI / 180;
+    const rlat2 = lat2 * Math.PI / 180;
+    const y = Math.sin(dLon) * Math.cos(rlat2);
+    const x = Math.cos(rlat1) * Math.sin(rlat2) - Math.sin(rlat1) * Math.cos(rlat2) * Math.cos(dLon);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+
+  // Deduplicate receivers
+  const seen = {};
+  for (const s of spots) {
+    if (s.rx_lat == null || s.rx_lon == null || !s.distance) continue;
+    const key = s.rx_sign + '|' + s.rx_loc;
+    if (!seen[key] || s.snr > seen[key].snr) seen[key] = s;
+  }
+
+  const sectors = Array.from({length: NUM_SECTORS}, () => ({ count: 0, maxDist: 0 }));
+  for (const s of Object.values(seen)) {
+    const txLat = s.tx_lat ?? TX_LAT;
+    const txLon = s.tx_lon ?? TX_LON;
+    const brg = calcBearing(txLat, txLon, s.rx_lat, s.rx_lon);
+    const idx = Math.floor(((brg + sectorDeg / 2) % 360) / sectorDeg);
+    sectors[idx].count++;
+    sectors[idx].maxDist = Math.max(sectors[idx].maxDist, s.distance || 0);
+  }
+
+  const maxCount = Math.max(1, ...sectors.map(s => s.count));
+
+  const numRings = 4;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 1; i <= numRings; i++) {
+    const r = (i / numRings) * maxRadius;
+    ctx.strokeStyle = 'rgba(42, 58, 82, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.stroke();
+    const ringVal = Math.round((i / numRings) * maxCount);
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.fillStyle = '#6b7fa3';
+    ctx.fillText(ringVal.toString(), cx + 12, cy - r + 2);
+  }
+
+  for (let i = 0; i < NUM_SECTORS; i++) {
+    const angle = (i * sectorAngle) - Math.PI / 2 - sectorAngle / 2;
+    ctx.strokeStyle = 'rgba(42, 58, 82, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(angle) * maxRadius, cy + Math.sin(angle) * maxRadius);
+    ctx.stroke();
+  }
+
+  const labels = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  for (let i = 0; i < NUM_SECTORS; i++) {
+    const angle = (i * sectorAngle) - Math.PI / 2;
+    const isMain = i % 4 === 0;
+    const isInter = i % 2 === 0;
+    ctx.fillStyle = isMain ? '#c8d6e5' : '#6b7fa3';
+    ctx.font = isMain ? 'bold 13px JetBrains Mono, monospace'
+             : isInter ? '11px JetBrains Mono, monospace'
+             : '9px JetBrains Mono, monospace';
+    const lx = cx + Math.cos(angle) * (maxRadius + (isMain ? 22 : 18));
+    const ly = cy + Math.sin(angle) * (maxRadius + (isMain ? 22 : 18));
+    ctx.fillText(labels[i], lx, ly);
+  }
+
+  for (let i = 0; i < NUM_SECTORS; i++) {
+    if (sectors[i].count === 0) continue;
+    const startAngle = (i * sectorAngle) - Math.PI / 2 - sectorAngle / 2;
+    const endAngle = startAngle + sectorAngle;
+    const r = (sectors[i].count / maxCount) * maxRadius;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, startAngle, endAngle);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(34, 211, 238, 0.35)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(34, 211, 238, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  const globalMaxDist = Math.max(1, ...sectors.map(s => s.maxDist));
+  ctx.beginPath();
+  let started = false;
+  for (let i = 0; i <= NUM_SECTORS; i++) {
+    const idx = i % NUM_SECTORS;
+    const angle = (idx * sectorAngle) - Math.PI / 2;
+    const r = sectors[idx].maxDist > 0
+      ? (sectors[idx].maxDist / globalMaxDist) * maxRadius * 0.95 : 0;
+    const px = cx + Math.cos(angle) * r;
+    const py = cy + Math.sin(angle) * r;
+    if (!started) { ctx.moveTo(px, py); started = true; }
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.strokeStyle = 'rgba(251, 146, 60, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, 2 * Math.PI);
+  ctx.fillStyle = '#22d3ee';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.font = '11px JetBrains Mono, monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const lx2 = 12, ly2 = cssSize - 40;
+  ctx.fillStyle = 'rgba(34, 211, 238, 0.35)';
+  ctx.fillRect(lx2, ly2, 14, 10);
+  ctx.strokeStyle = 'rgba(34, 211, 238, 0.7)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(lx2, ly2, 14, 10);
+  ctx.fillStyle = '#c8d6e5';
+  ctx.fillText('Receiver count', lx2 + 20, ly2 - 1);
+  ctx.strokeStyle = 'rgba(251, 146, 60, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(lx2, ly2 + 22); ctx.lineTo(lx2 + 14, ly2 + 22);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#c8d6e5';
+  ctx.fillText('Max distance', lx2 + 20, ly2 + 15);
+
+  canvas._roseSectors = sectors.map((s, i) => {
+    const fromDeg = Math.round(i * sectorDeg - sectorDeg / 2 + 360) % 360;
+    const toDeg = Math.round(fromDeg + sectorDeg) % 360;
+    return { ...s, fromDeg, toDeg, index: i };
+  });
+}
+
+// Rose plot tooltip
+(function() {
+  const canvas = document.getElementById('polarCanvas');
+  const tooltip = document.createElement('div');
+  tooltip.style.cssText = 'position:fixed;padding:4px 8px;background:#1a2235;border:1px solid #2a3a52;color:#c8d6e5;font:12px JetBrains Mono,monospace;border-radius:4px;pointer-events:none;display:none;z-index:1000;white-space:nowrap';
+  document.body.appendChild(tooltip);
+
+  const labels = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  const NUM_SECTORS = 16;
+  const sectorDeg = 360 / NUM_SECTORS;
+
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const cssSize = 600;
+    const cxc = cssSize / 2, cyc = cssSize / 2;
+    const dx = mx - cxc, dy = my - cyc;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const maxRadius = cssSize / 2 - 50;
+    if (dist > maxRadius || !canvas._roseSectors) { tooltip.style.display = 'none'; return; }
+    let angle = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
+    const idx = Math.floor(((angle + sectorDeg / 2) % 360) / sectorDeg);
+    const sec = canvas._roseSectors[idx];
+    if (sec && sec.count > 0) {
+      const distStr = sec.maxDist >= 1000 ? (sec.maxDist / 1000).toFixed(1) + 'k' : Math.round(sec.maxDist).toString();
+      tooltip.textContent = `${labels[idx]} (${sec.fromDeg}°–${sec.toDeg}°) · ${sec.count} receiver${sec.count > 1 ? 's' : ''} · max ${distStr} km`;
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top = (e.clientY - 10) + 'px';
+      tooltip.style.display = 'block';
+    } else {
+      tooltip.style.display = 'none';
+    }
+  });
+  canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+})();
+
+function buildTimelineChart(spots) {
+  const canvas = document.getElementById('timelineChart');
+  if (!canvas) return;
+
+  const binMinutes = currentWindow <= 1 ? 2
+    : currentWindow <= 6 ? 15
+    : currentWindow <= 12 ? 30
+    : currentWindow <= 24 ? 60
+    : 360;
+
+  const now = Date.now();
+  const startMs = now - currentWindow * 3600 * 1000;
+  const binMs = binMinutes * 60 * 1000;
+  const numBins = Math.ceil(currentWindow * 60 / binMinutes);
+
+  const bandSet = new Set(spots.map(s => s.band_label).filter(Boolean));
+  const bandSortKey = b => { const n = parseInt(b); return isNaN(n) ? 99999 : n; };
+  const bands = [...bandSet].sort((a, b) => bandSortKey(a) - bandSortKey(b));
+
+  const bins = Array.from({length: numBins}, () => ({}));
+  for (const s of spots) {
+    const bi = Math.floor((new Date(s.time + 'Z').getTime() - startMs) / binMs);
+    if (bi < 0 || bi >= numBins) continue;
+    const band = s.band_label || '?';
+    bins[bi][band] = (bins[bi][band] || 0) + 1;
+  }
+
+  const maxVal = Math.max(1, ...bins.map(b => Object.values(b).reduce((s, v) => s + v, 0)));
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.offsetWidth;
+  if (!cssW) return;
+  const cssH = 180;
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  canvas.style.height = cssH + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pL = 44, pR = 12, pT = 10, pB = 36;
+  const cW = cssW - pL - pR;
+  const cH = cssH - pT - pB;
+  const barW = cW / numBins;
+
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  ctx.font = '10px JetBrains Mono, monospace';
+  for (let i = 0; i <= 4; i++) {
+    const y = pT + cH * (1 - i / 4);
+    ctx.strokeStyle = 'rgba(42,58,82,0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(pL + cW, y); ctx.stroke();
+    ctx.fillStyle = '#6b7fa3';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(Math.round(maxVal * i / 4), pL - 5, y);
+  }
+
+  ctx.globalAlpha = 0.85;
+  for (let i = 0; i < numBins; i++) {
+    let yBottom = pT + cH;
+    for (const band of bands) {
+      const count = bins[i][band] || 0;
+      if (!count) continue;
+      const bh = Math.max(1, (count / maxVal) * cH);
+      ctx.fillStyle = BAND_COLORS[band] || '#888';
+      ctx.fillRect(pL + i * barW + 0.5, yBottom - bh, barW - 1, bh);
+      yBottom -= bh;
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  const labelStep = Math.max(1, Math.round(numBins / 6));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#6b7fa3';
+  for (let i = 0; i < numBins; i += labelStep) {
+    const d = new Date(startMs + i * binMs);
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dy = String(d.getUTCDate()).padStart(2, '0');
+    const lbl = currentWindow <= 24 ? `${hh}:${mm}` : `${mo}-${dy}`;
+    ctx.fillText(lbl, pL + (i + 0.5) * barW, pT + cH + 5);
+  }
+
+  ctx.strokeStyle = 'rgba(42,58,82,0.8)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pL, pT); ctx.lineTo(pL, pT + cH); ctx.lineTo(pL + cW, pT + cH);
+  ctx.stroke();
+
+  canvas._timeline = { bins, bands, startMs, binMs, numBins, pL, pT, cH, barW };
+
+  const legend = document.getElementById('timelineLegend');
+  if (legend) {
+    legend.innerHTML = bands.map(band => {
+      const color = BAND_COLORS[band] || '#888';
+      return `<span style="display:inline-flex;align-items:center;gap:0.3rem;"><span style="display:inline-block;width:10px;height:10px;background:${color};border-radius:2px;opacity:0.85;"></span>${band}</span>`;
+    }).join('');
+  }
+}
+
+// Timeline tooltip
+(function() {
+  const canvas = document.getElementById('timelineChart');
+  const tip = document.createElement('div');
+  tip.style.cssText = 'position:fixed;padding:6px 10px;background:#1a2235;border:1px solid #2a3a52;color:#c8d6e5;font:11px JetBrains Mono,monospace;border-radius:4px;pointer-events:none;display:none;z-index:1000;line-height:1.6;';
+  document.body.appendChild(tip);
+
+  canvas.addEventListener('mousemove', e => {
+    const t = canvas._timeline;
+    if (!t) { tip.style.display = 'none'; return; }
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    if (my < t.pT || my > t.pT + t.cH) { tip.style.display = 'none'; return; }
+    const i = Math.floor((mx - t.pL) / t.barW);
+    if (i < 0 || i >= t.numBins) { tip.style.display = 'none'; return; }
+    const bin = t.bins[i];
+    const total = Object.values(bin).reduce((s, v) => s + v, 0);
+    if (!total) { tip.style.display = 'none'; return; }
+    const d = new Date(t.startMs + i * t.binMs);
+    const ts = d.toUTCString().replace(/ \d{4}.*/, '') + ' UTC';
+    const lines = [`<b>${ts}</b> — ${total} spot${total !== 1 ? 's' : ''}`];
+    for (const band of t.bands) {
+      const count = bin[band] || 0;
+      if (!count) continue;
+      const color = BAND_COLORS[band] || '#888';
+      lines.push(`<span style="color:${color}">${band}: ${count}</span>`);
+    }
+    tip.innerHTML = lines.join('<br>');
+    tip.style.left = (e.clientX + 14) + 'px';
+    tip.style.top = (e.clientY - 12) + 'px';
+    tip.style.display = 'block';
+  });
+  canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+})();
+
+// --- Event handlers ---
+document.getElementById('timeControls').addEventListener('click', e => {
+  if (e.target.tagName !== 'BUTTON') return;
+  document.querySelectorAll('#timeControls button').forEach(b => b.classList.remove('active'));
+  e.target.classList.add('active');
+  currentWindow = parseInt(e.target.dataset.window);
+  updateAll();
+});
+
+document.querySelectorAll('thead th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (sortKey === key) { sortAsc = !sortAsc; }
+    else { sortKey = key; sortAsc = true; }
+    updateAll();
+  });
+});
+
+updateAll();
+window.addEventListener('resize', () => buildTimelineChart(filterRx(currentWindow)));
+</script>
+
+</body>
+</html>

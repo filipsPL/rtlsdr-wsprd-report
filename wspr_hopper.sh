@@ -17,7 +17,7 @@ DAY_END=18                                        # UTC hour when night begins
 RTL_GAIN=39
 
 WSPRD_PATH="/home/filips/bin/rtlsdr_wsprd"
-LOG_ANALYZER="/home/filips/software/rtlsdr-wsprd-report/wspr_analyzer.py"
+LOG_ANALYZER="/home/filips/software/rtlsdr-wsprd-report/wspr_rx_local.py"
 LOG_ANALYZER_DB="/mnt/ramdisk/rrd_dbases/wspr_log_analyzer.sqlite"
 LOG_ANALYZER_HTML="/mnt/ramdisk/rrd_dbases/wspr_log_analyzer.html"
 

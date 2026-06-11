@@ -297,6 +297,19 @@
     height: auto;
   }
 
+  .section-window-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--text-dim);
+    text-transform: none;
+    letter-spacing: 0;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.1rem 0.4rem;
+    vertical-align: middle;
+  }
+
   .status-live {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.8rem;
@@ -319,7 +332,7 @@
 
 <div class="header">
   <h1>📡 WSPR Monitor</h1>
-  <div class="meta">QTH: ${LOCATOR} (${MY_LAT}°, ${MY_LON}°) · Generated: ${GENERATED} &ensp;${STATUS_BADGE}</div>
+  <div class="meta">QTH: ${LOCATOR} (${MY_LAT}°, ${MY_LON}°) · Generated: ${GENERATED} &ensp;${STATUS_BADGE} | see also: <a href="wspr_rx_remote.html">RX Remote</a> · <a href="wspr_rx_heatmap.html">Global Heatmap</a></div>
 </div>
 
 <div class="controls" id="timeControls">
@@ -342,14 +355,14 @@
 <div id="map"></div>
 
 <div class="section">
-  <h2>Observations</h2>
+  <h2>Received by me — Observations <span id="obsWindowLabel" class="section-window-label"></span></h2>
   <div class="table-wrapper">
     <table>
       <thead>
         <tr>
           <th data-sort="timestamp">Date/Time</th>
-          <th data-sort="call">Callsign</th>
-          <th data-sort="loc">Locator</th>
+          <th data-sort="call">TX Callsign</th>
+          <th data-sort="loc">TX Locator</th>
           <th data-sort="band">Band</th>
           <th data-sort="freq">Freq (MHz)</th>
           <th data-sort="snr">SNR</th>
@@ -421,6 +434,15 @@ let sortKey = 'timestamp';
 let sortAsc = false;
 let _lastObs = [];
 
+function windowLabel(hours) {
+  if (hours === 1)   return '1h';
+  if (hours === 6)   return '6h';
+  if (hours === 12)  return '12h';
+  if (hours === 24)  return '24h';
+  if (hours === 168) return '7d';
+  return hours + 'h';
+}
+
 // --- Auto-reload ---
 let reloadTimer = null;
 
@@ -470,6 +492,9 @@ function filterObs(windowHours) {
 
 function updateAll() {
   const obs = filterObs(currentWindow);
+
+  // Window label on "Received by me" heading
+  document.getElementById('obsWindowLabel').textContent = windowLabel(currentWindow);
 
   // Stats
   document.getElementById('statSpots').textContent = obs.length;
@@ -1144,3 +1169,4 @@ window.addEventListener('resize', buildHistoryCharts);
 
 </body>
 </html>
+

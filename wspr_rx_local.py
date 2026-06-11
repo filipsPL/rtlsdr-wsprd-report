@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-WSPR Log Analyzer
+WSPR RX Local — spots received by this station.
 https://github.com/filipsPL/rtlsdr-wsprd-report
 Reads WSPR TSV logs, stores in SQLite, generates static HTML dashboard.
-Usage: python wspr_analyzer.py <tsv_file> <my_locator> [--db wspr.db] [--output wspr_report.html]
+Usage: python wspr_rx_local.py <tsv_file> <my_locator> [--db wspr.db] [--output wspr_rx_local.html]
 """
 
 from __future__ import annotations
@@ -177,6 +177,7 @@ def query_observations(conn: sqlite3.Connection, since: str | None = None) -> li
     return [dict(zip(cols, r)) for r in rows]
 
 
+
 # --- HTML Generation ---
 
 
@@ -270,7 +271,7 @@ def generate_html(conn: sqlite3.Connection, my_locator: str, output_path: str, f
     weekly_json = json.dumps(weekly_data)
 
     # Load external HTML template
-    template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wspr_template.html")
+    template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wspr_rx_local_template.html")
     with open(template_path, "r") as f:
         template = Template(f.read())
 
@@ -304,7 +305,7 @@ def main():
     parser.add_argument("tsv_file", help="Input WSPR TSV log file")
     parser.add_argument("locator", help="Your Maidenhead grid locator (e.g. JN47)")
     parser.add_argument("--db", default="wspr.db", help="SQLite database path (default: wspr.db)")
-    parser.add_argument("--output", default="wspr_report.html", help="Output HTML file (default: wspr_report.html)")
+    parser.add_argument("--output", default="wspr_rx_local.html", help="Output HTML file (default: wspr_rx_local.html)")
     args = parser.parse_args()
 
     if not os.path.exists(args.tsv_file):
@@ -331,3 +332,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
