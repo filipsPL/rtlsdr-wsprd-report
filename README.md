@@ -1,6 +1,6 @@
 # WSPR Monitor
 
-A set of *simple* tools for unattended Weak Signal Propagation Reporter [WSPR](https://en.wikipedia.org/wiki/WSPR_(amateur_radio_software)) spot collection and visualization using an RTL-SDR receiver and [rtlsdr_wsprd](https://github.com/filipsPL/rtlsdr-wsprd/) (modified). The report **is single, self-containing html file**, so no telegraf, grafana, influxdb etc. ;-) 
+A set of *simple* tools for unattended Weak Signal Propagation Reporter [WSPR](https://en.wikipedia.org/wiki/WSPR_(amateur_radio_software)) spot collection and visualization using an RTL-SDR receiver and [rtlsdr_wsprd](https://github.com/filipsPL/rtlsdr-wsprd/) (modified). The report **is single, self-containing html file**, so no telegraf, grafana, influxdb etc. ;-)
 
 [![Run for sample data](https://github.com/filipsPL/rtlsdr-wsprd-report/actions/workflows/test.yml/badge.svg)](https://github.com/filipsPL/rtlsdr-wsprd-report/actions/workflows/test.yml)
 
@@ -11,15 +11,17 @@ A set of *simple* tools for unattended Weak Signal Propagation Reporter [WSPR](h
 - **Day/Night band selection** — Two separate band lists are used depending on the UTC hour (default: day 06–18 UTC, night 18–06 UTC). Lower bands (160m–40m) are favored at night for better propagation, higher bands (40m–6m) during the day. The boundary hours and band lists are configurable at the top of the script.
 - **WSPR-aligned timeout** — Instead of a fixed duration, listening time is dynamically calculated to align with the WSPR 2-minute transmission cycle. The script waits until the next even-minute UTC boundary, then listens for a configurable number of full cycles (`WSPR_CYCLES`, default: 2). This ensures every captured transmission is complete and minimizes idle time between bands.
 
-**`wspr_analyzer.py`** — Report generator. Reads WSPR TSV logs, stores observations in a SQLite database (with deduplication), and produces a self-contained static HTML dashboard (~80-200 kb, depending on the number of observations) covering the last 7 days.
+**`wspr_rx_local.py`** — Local RX report generator. Reads WSPR TSV logs, stores observations in a SQLite database (with deduplication), and produces a self-contained static HTML dashboard (`wspr_rx_local.html`, ~80-200 kb) covering the last 7 days. Shows stations *your* receiver heard.
 
+**`wspr_rx_remote.py`** — Remote RX report generator. Fetches spots from the [wspr.live](https://wspr.live) API showing which stations around the world heard *your* transmissions, stores them in a separate SQLite database, and generates `wspr_rx_remote.html`.
 
-| screenshot 1                               | screenshot 2                                              |
-| ------------------------------------------ | --------------------------------------------------------- |
-| ![screenshot1](obrazki/obrazek-README.png) | ![screenshot visualization](obrazki/obrazek-README-1.png) |
+**`wspr_rx_heatmap.py`** — All-time world heatmap. Reads the full observation history from SQLite and renders a Leaflet density heatmap of every received station's location.
 
+| screenshot 1                               | screenshot 2                                              | screenshot heatmap                       |
+| ------------------------------------------ | --------------------------------------------------------- | ---------------------------------------- |
+| ![screenshot1](obrazki/obrazek-README.png) | ![screenshot visualization](obrazki/obrazek-README-1.png) | ![heatmap](obrazki/obrazek-README-2.png) |
 
-The dashboard includes:
+The `wspr_rx_local.html` dashboard includes:
 
 - Interactive map (Leaflet) showing paths from your QTH to each spotted station, color-coded by band
 - Time window selector (1h / 6h / 12h / 24h / 7d)
@@ -37,7 +39,7 @@ The dashboard includes:
 
 ## Usage
 
-### Collecting spots - `wspr_hopper.sh`
+### Collecting spots — `wspr_hopper.sh`
 
 Edit the configuration section at the top of `wspr_hopper.sh` (callsign, locator, bands, gain, cycles), then run:
 
@@ -50,25 +52,23 @@ It will loop indefinitely, automatically switching between day and night band se
 
 Key configuration variables:
 
-| Variable      | Default                          | Description                                                        |
-| ------------- | -------------------------------- | ------------------------------------------------------------------ |
-| `BANDS_DAY`   | `40m 30m 20m 17m 15m 12m 10m 6m` | Bands used during daytime (06–18 UTC)                              |
-| `BANDS_NIGHT` | `160m 80m 60m 40m 30m`           | Bands used during nighttime (18–06 UTC)                            |
-| `DAY_START`   | `6`                              | UTC hour when day begins                                           |
-| `DAY_END`     | `18`                             | UTC hour when night begins                                         |
-| `WSPR_CYCLES` | `2`                              | Number of full WSPR TX cycles per band                             |
-| `MARGIN`      | `7`                              | Time needed to close the current session and start new. See below  |
-
+| Variable      | Default                          | Description                                                       |
+| ------------- | -------------------------------- | ----------------------------------------------------------------- |
+| `BANDS_DAY`   | `40m 30m 20m 17m 15m 12m 10m 6m` | Bands used during daytime (06–18 UTC)                             |
+| `BANDS_NIGHT` | `160m 80m 60m 40m 30m`           | Bands used during nighttime (18–06 UTC)                           |
+| `DAY_START`   | `6`                              | UTC hour when day begins                                          |
+| `DAY_END`     | `18`                             | UTC hour when night begins                                        |
+| `WSPR_CYCLES` | `2`                              | Number of full WSPR TX cycles per band                            |
+| `MARGIN`      | `7`                              | Time needed to close the current session and start new. See below |
 
 Adjusting `MARGIN` variable. Use the default settings and observe for messages *Wait for time sync (start in XXX sec)*. If XXX is small (like 2 seconds or so) the `MARGIN` is ok. If it is 0, it is risky as we may miss the slot. If it is higher than, let say, 100 seconds, `MARGIN` is too small, so increase the value.
 
-
-### Generating the report `wspr_analyzer.py`
+### Generating the local RX report — `wspr_rx_local.py`
 
 (when used without `wspr_hopper.sh` or if you want your reports more frequently than every `wspr_hopper.sh` loop)
 
 ```bash
-python3 wspr_analyzer.py samples/spots.tsv KO02 --db samples/wspr.db --output samples/wspr_report.html
+python3 wspr_rx_local.py samples/spots.tsv KO02 --db samples/wspr.db --output samples/wspr_rx_local.html
 ```
 
 | Argument   | Description                                         |
@@ -76,7 +76,7 @@ python3 wspr_analyzer.py samples/spots.tsv KO02 --db samples/wspr.db --output sa
 | `tsv_file` | Path to WSPR TSV log (positional, required)         |
 | `locator`  | Your Maidenhead grid locator (positional, required) |
 | `--db`     | SQLite database path (default: `wspr.db`)           |
-| `--output` | Output HTML file (default: `wspr_report.html`)      |
+| `--output` | Output HTML file (default: `wspr_rx_local.html`)    |
 
 Re-importing the same file is safe — duplicate observations are skipped.
 
@@ -84,7 +84,29 @@ To ingest all accumulated logs at once:
 
 ```bash
 for f in wspr_logs/2026-*.tsv; do
-    python3 wspr_analyzer.py "$f" KO02
+    python3 wspr_rx_local.py "$f" KO02
 done
 ```
 
+### Generating the remote RX report — `wspr_rx_remote.py`
+
+Fetches spots from wspr.live showing who heard your transmissions:
+
+```bash
+python3 wspr_rx_remote.py --callsign SP5FLS --tx-loc KO02MC --db wspr_rx.db --output wspr_rx_remote.html
+```
+
+| Argument     | Description                                               |
+| ------------ | --------------------------------------------------------- |
+| `--callsign` | Your TX callsign to query (default: configured in script) |
+| `--tx-loc`   | Your Maidenhead locator for map center                    |
+| `--db`       | SQLite database path (default: `wspr_rx.db`)              |
+| `--hours`    | Look-back window in hours (default: `24`)                 |
+| `--limit`    | Max rows to fetch, `0` = unlimited (default: `1000`)      |
+| `--output`   | Output HTML file (default: `wspr_rx_remote.html`)         |
+
+### Generating the all-time heatmap — `wspr_rx_heatmap.py`
+
+```bash
+python3 wspr_rx_heatmap.py --db wspr.db --output wspr_rx_heatmap.html
+```
