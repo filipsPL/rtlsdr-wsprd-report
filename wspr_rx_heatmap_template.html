@@ -236,7 +236,7 @@
 
 
 <div class="footer">
-  <a href="https://github.com/filipsPL/rtlsdr-wsprd-report">WSPR Analyzer</a> · Global analysis · Map tiles © OpenStreetMap contributors
+  <a href="https://github.com/filipsPL/rtlsdr-wsprd-report">WSPR Analyzer</a> · Global analysis · Map tiles © Esri, © OpenStreetMap contributors
 </div>
 
 <script>
@@ -245,9 +245,9 @@ const HEAT_POINTS = ${HEAT_POINTS_JSON};
 
 // --- Map ---
 const map = L.map('map').setView([20, 0], 2);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution: '© OpenStreetMap contributors, © CARTO',
-  maxZoom: 18
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors',
+  maxZoom: 16
 }).addTo(map);
 
 // HEAT_POINTS contains [lat, lon, normalizedCount] in [0,1].

@@ -409,7 +409,7 @@
 </div>
 
 <div class="footer">
-  <a href="https://github.com/filipsPL/rtlsdr-wsprd-report">WSPR Analyzer</a> · Data from WSPR logs · Map tiles © OpenStreetMap contributors
+  <a href="https://github.com/filipsPL/rtlsdr-wsprd-report">WSPR Analyzer</a> · Data from WSPR logs · Map tiles © Esri, © OpenStreetMap contributors
 </div>
 
 <script>
@@ -471,9 +471,9 @@ if (localStorage.getItem('wspr_autoreload') === '1') {
 
 // --- Map setup ---
 const map = L.map('map', { zoomControl: true }).setView([MY_LAT, MY_LON], 4);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution: '© OpenStreetMap contributors, © CARTO',
-  maxZoom: 18
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors',
+  maxZoom: 16
 }).addTo(map);
 
 const homeMarker = L.circleMarker([MY_LAT, MY_LON], {
